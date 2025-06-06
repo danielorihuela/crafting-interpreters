@@ -1,11 +1,15 @@
 package main
 
-func scanTokens(source string) []Token {
+func scanTokens(source string) ([]Token, error) {
 	tokens := []Token{}
 
 	line, position := uint(1), uint(0)
 	for !allCharactersParsed(source, position) {
-		scannedToken := scanToken(source, position, line)
+		scannedToken, err := scanToken(source, position, line)
+		if err != nil {
+			return nil, err
+		}
+
 		if scannedToken.Type != NOTHING {
 			tokens = append(tokens, scannedToken)
 		}
@@ -13,10 +17,10 @@ func scanTokens(source string) []Token {
 		position, line = scannedToken.Position, scannedToken.Line
 	}
 
-	return append(tokens, EofToken(position, line))
+	return append(tokens, EofToken(position, line)), nil
 }
 
-func scanToken(source string, start uint, line uint) Token {
+func scanToken(source string, start uint, line uint) (Token, error) {
 	position := start
 	currentCharacter := source[position]
 
@@ -30,7 +34,7 @@ func scanToken(source string, start uint, line uint) Token {
 			position += 1
 		}
 
-		return NilToken(position, line)
+		return NilToken(position, line), nil
 	}
 
 	tokenType := TrySingleCharTokenType(currentCharacter)
@@ -41,7 +45,7 @@ func scanToken(source string, start uint, line uint) Token {
 			Literal:  nil,
 			Line:     line,
 			Position: position + 1,
-		}
+		}, nil
 	}
 
 	tokenType, length := TryComparisonOperatorTokenType(currentCharacter, nextCharacter)
@@ -52,34 +56,38 @@ func scanToken(source string, start uint, line uint) Token {
 			Literal:  nil,
 			Line:     line,
 			Position: position + length,
-		}
+		}, nil
 	}
 
 	if isDigit(currentCharacter) {
-		return scanDecimal(source, position, line)
+		return scanDecimal(source, position, line), nil
 	}
 
 	if isAlpha(currentCharacter) {
-		return scanIdentifier(source, position, line)
+		return scanIdentifier(source, position, line), nil
 	}
 
 	switch currentCharacter {
 	case ' ':
 	case '\r':
 	case '\t':
-		return NilToken(position+1, line)
+		return NilToken(position+1, line), nil
 	case '\n':
-		return NilToken(position+1, line+1)
+		return NilToken(position+1, line+1), nil
 	case '"':
 		return scanString(source, position, line)
 	default:
-		report(0, "", "Unexpected character: "+string(source[position]))
+		return NilToken(position, line), &ScannerError{
+			Line:    line,
+			Where:   "",
+			Message: "Unexpected character: " + string(source[position]),
+		}
 	}
 
-	return NilToken(position+1, line)
+	return NilToken(position+1, line), nil
 }
 
-func scanString(source string, start uint, line uint) Token {
+func scanString(source string, start uint, line uint) (Token, error) {
 	position := start + 1
 	for !allCharactersParsed(source, position) && source[position] != '"' {
 		if source[position] == '\n' {
@@ -89,12 +97,15 @@ func scanString(source string, start uint, line uint) Token {
 	}
 
 	if allCharactersParsed(source, position) {
-		report(line, "", "Unterminated string")
-		return NilToken(position, line)
+		return NilToken(position, line), &ScannerError{
+			Line:    line,
+			Where:   "",
+			Message: "Unterminated string",
+		}
 	}
 
 	position += 1
-	return StringToken(source[start:position], position, line)
+	return StringToken(source[start:position], position, line), nil
 }
 
 func scanDecimal(source string, start uint, line uint) Token {

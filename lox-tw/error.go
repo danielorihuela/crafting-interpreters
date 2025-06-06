@@ -2,9 +2,14 @@ package main
 
 import (
 	"fmt"
-	"os"
 )
 
-func report(line uint, where, message string) {
-	fmt.Fprintf(os.Stderr, "[line %d] Error %s: %s\n", line, where, message)
+type ScannerError struct {
+	Line    uint
+	Where   string
+	Message string
+}
+
+func (e *ScannerError) Error() string {
+	return fmt.Sprintf("[line %d] Error %s: %s", e.Line, e.Where, e.Message)
 }

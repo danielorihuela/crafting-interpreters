@@ -27,7 +27,10 @@ func runFile(path string) {
 		os.Exit(66)
 	}
 
-	run(string(content))
+	err = run(string(content))
+	if err != nil {
+		os.Exit(65)
+	}
 }
 
 func runPrompt() {
@@ -51,9 +54,16 @@ func runPrompt() {
 	}
 }
 
-func run(source string) {
-	tokens := scanTokens(source)
+func run(source string) error {
+	tokens, err := scanTokens(source)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error scanning tokens: %v\n", err)
+		return err
+	}
+
 	for _, token := range tokens {
 		fmt.Println(token.String())
 	}
+
+	return nil
 }
