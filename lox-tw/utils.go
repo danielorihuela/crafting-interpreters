@@ -1,7 +1,15 @@
 package main
 
-func isComment(a, b byte) bool {
+func isSingleLineComment(a, b byte) bool {
 	return a == '/' && b == '/'
+}
+
+func isMultiLineCommentStart(a, b byte) bool {
+	return a == '/' && b == '*'
+}
+
+func isMultiLineCommentEnd(a, b byte) bool {
+	return a == '*' && b == '/'
 }
 
 func allCharactersParsed(source string, position uint) bool {

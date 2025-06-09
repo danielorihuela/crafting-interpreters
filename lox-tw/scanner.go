@@ -29,12 +29,14 @@ func scanToken(source string, start uint, line uint) (Token, error) {
 		nextCharacter = source[position+1]
 	}
 
-	if isComment(currentCharacter, nextCharacter) {
-		for !allCharactersParsed(source, position) && source[position] != '\n' {
-			position += 1
-		}
+	if isSingleLineComment(currentCharacter, nextCharacter) {
+		return scanSingleLineComment(source, position, line)
+	}
 
-		return NilToken(position, line), nil
+	if MULTILINE_COMMENTS {
+		if isMultiLineCommentStart(currentCharacter, nextCharacter) {
+			return scanMultiLineComment(source, position, line)
+		}
 	}
 
 	tokenType := TrySingleCharTokenType(currentCharacter)
@@ -85,6 +87,35 @@ func scanToken(source string, start uint, line uint) (Token, error) {
 	}
 
 	return NilToken(position+1, line), nil
+}
+
+func scanSingleLineComment(source string, start uint, line uint) (Token, error) {
+	position := start + 2
+	for !allCharactersParsed(source, position) && source[position] != '\n' {
+		position += 1
+	}
+
+	return NilToken(position, line), nil
+}
+
+func scanMultiLineComment(source string, start uint, line uint) (Token, error) {
+	position := start + 2
+	for !allCharactersParsed(source, position+1) {
+		if isMultiLineCommentEnd(source[position], source[position+1]) {
+			return NilToken(position+2, line), nil
+		}
+
+		if source[position] == '\n' {
+			line += 1
+		}
+		position += 1
+	}
+
+	return NilToken(position, line), &ScannerError{
+		Line:    line,
+		Where:   "",
+		Message: "Unterminated multi-line comment",
+	}
 }
 
 func scanString(source string, start uint, line uint) (Token, error) {
