@@ -36,7 +36,7 @@
 
           $git submodule init
           $git submodule update
-          (cd lox-tw; $go build)
+          (cd lox-tw; $go build; $go test)
           (cd craftinginterpreters/tool; $dart pub get > /dev/null)
 
           cd craftinginterpreters
