@@ -206,11 +206,11 @@ func parsePrimary(tokens []Token, start int) (Expr[string], int, error) {
 	case LEFT_PAREN:
 		expr, end, err := parseExpression(tokens, start+1)
 		if err != nil {
-			return nil, 0, err
+			return expr, end, err
 		}
 
 		if tokens[end].Type != RIGHT_PAREN {
-			return nil, 0, &ParserError{
+			return expr, end, &ParserError{
 				Token:   tokens[end],
 				Message: "Expected ')' after expression",
 			}
@@ -218,7 +218,7 @@ func parsePrimary(tokens []Token, start int) (Expr[string], int, error) {
 
 		return GroupingExpr[string]{Expression: expr}, end + 1, nil
 	default:
-		return nil, 0, &ParserError{
+		return LiteralExpr[string]{Value: tokens[start].Literal}, start, &ParserError{
 			Token:   tokens[start],
 			Message: "Expected expression",
 		}
