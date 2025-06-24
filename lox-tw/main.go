@@ -61,8 +61,16 @@ func run(source string) error {
 		return err
 	}
 
-	for _, token := range tokens {
-		fmt.Println(token.String())
+	if os.Getenv("CHAPTER_04") == "1" {
+		for _, token := range tokens {
+			fmt.Println(token.String())
+		}
+	} else if os.Getenv("CHAPTER_06") == "1" {
+		expr, _ := parseTokens(tokens)
+		fmt.Println(expr.Accept(AstPrinter{}))
+	} else {
+		expr, _ := parseTokens(tokens)
+		fmt.Println(expr.Accept(AstPrinter{}))
 	}
 
 	return nil

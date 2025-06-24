@@ -1,6 +1,10 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"strconv"
+	"strings"
+)
 
 type AstRpnPrinter struct {
 }
@@ -18,7 +22,11 @@ func (p AstRpnPrinter) VisitLiteralExpr(expr LiteralExpr[string]) string {
 	case string:
 		return "\"" + v + "\""
 	case float64:
-		return fmt.Sprintf("%g", v)
+		value := strconv.FormatFloat(v, 'f', -1, 64)
+		if !strings.Contains(value, ".") {
+			value = value + ".0"
+		}
+		return value
 	case bool:
 		if v {
 			return "true"
@@ -33,5 +41,5 @@ func (p AstRpnPrinter) VisitLiteralExpr(expr LiteralExpr[string]) string {
 }
 
 func (p AstRpnPrinter) VisitUnaryExpr(expr UnaryExpr[string]) string {
-	return "(" + expr.Operator.Lexeme + expr.Right.Accept(p) + ")"
+	return "(" + expr.Operator.Lexeme + " " + expr.Right.Accept(p) + ")"
 }
