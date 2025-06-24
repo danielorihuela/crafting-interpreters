@@ -19,7 +19,7 @@ ternary        → equality "?" ternary ":" ternary ;
 with comma and ternary operator
 expression     → comma ;
 comma          → ternary ( "," ternary )* ;
-ternary        → equality "?" ternary ":" ternary ;
+ternary        → equality ( "?" ternary ":" ternary )* ;
 */
 package main
 
@@ -80,7 +80,7 @@ func parseTernary(tokens []Token, start int) (Expr[string], int, error) {
 	}
 
 	if tokens[end].Type == QUESTION_MARK {
-		trueExpr, trueEnd, err := parseTernary(tokens, end+1)
+		trueExpr, trueEnd, err := parseExpression(tokens, end+1)
 		if err != nil {
 			return trueExpr, trueEnd, err
 		}
@@ -92,7 +92,7 @@ func parseTernary(tokens []Token, start int) (Expr[string], int, error) {
 			}
 		}
 
-		falseExpr, falseEnd, err := parseTernary(tokens, trueEnd+1)
+		falseExpr, falseEnd, err := parseExpression(tokens, trueEnd+1)
 		if err != nil {
 			return falseExpr, falseEnd, err
 		}
