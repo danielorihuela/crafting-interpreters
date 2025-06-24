@@ -56,6 +56,26 @@ func NumberToken(lexeme string, position, line uint) Token {
 	}
 }
 
+func LeftParenToken(line, pos uint) Token {
+	return Token{
+		Type:     LEFT_PAREN,
+		Lexeme:   "(",
+		Literal:  nil,
+		Line:     line,
+		Position: pos,
+	}
+}
+
+func RightParenToken(line, pos uint) Token {
+	return Token{
+		Type:     RIGHT_PAREN,
+		Lexeme:   ")",
+		Literal:  nil,
+		Line:     line,
+		Position: pos,
+	}
+}
+
 func (t Token) String() string {
 	return fmt.Sprintf("%s %s %s", t.Type.String(), t.Lexeme, t.literalToString())
 }

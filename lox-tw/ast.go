@@ -17,6 +17,7 @@ type ExprVisitor[T any] interface {
 	VisitGroupingExpr(expr GroupingExpr[T]) T
 	VisitLiteralExpr(expr LiteralExpr[T]) T
 	VisitUnaryExpr(expr UnaryExpr[T]) T
+	VisitTernaryExpr(expr TernaryExpr[T]) T
 }
 
 type BinaryExpr[T any] struct {
@@ -52,4 +53,14 @@ type UnaryExpr[T any] struct {
 
 func (u UnaryExpr[T]) Accept(visitor ExprVisitor[T]) T {
 	return visitor.VisitUnaryExpr(u)
+}
+
+type TernaryExpr[T any] struct {
+	Condition Expr[T]
+	TrueExpr  Expr[T]
+	FalseExpr Expr[T]
+}
+
+func (t TernaryExpr[T]) Accept(visitor ExprVisitor[T]) T {
+	return visitor.VisitTernaryExpr(t)
 }

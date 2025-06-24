@@ -17,6 +17,8 @@ const (
 	MINUS
 	PLUS
 	SEMICOLON
+	QUESTION_MARK
+	COLON
 	SLASH
 	STAR
 )
@@ -74,6 +76,8 @@ func (t TokenType) String() string {
 		"MINUS",
 		"PLUS",
 		"SEMICOLON",
+		"QUESTION_MARK",
+		"COLON",
 		"SLASH",
 		"STAR",
 		"BANG",
@@ -121,6 +125,8 @@ func TrySingleCharTokenType(c byte) TokenType {
 		';': SEMICOLON,
 		'/': SLASH,
 		'*': STAR,
+		'?': QUESTION_MARK,
+		':': COLON,
 	}[c]
 }
 

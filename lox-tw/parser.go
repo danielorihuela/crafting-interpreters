@@ -1,6 +1,5 @@
 /*
 grammar without ambiguity
-
 expression     → equality ;
 equality       → comparison ( ( "!=" | "==" ) comparison )* ;
 comparison     → term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
@@ -10,9 +9,17 @@ unary          → ( "!" | "-" ) unary | primary ;
 primary        → NUMBER | STRING | "true" | "false" | "nil" | "(" expression ")" ;
 
 with comma operator
-
 expression     → comma ;
 comma          → equality ( "," equality )* ;
+
+with ternary operator
+expression     → ternary ;
+ternary        → equality "?" ternary ":" ternary ;
+
+with comma and ternary operator
+expression     → comma ;
+comma          → ternary ( "," ternary )* ;
+ternary        → equality "?" ternary ":" ternary ;
 */
 package main
 
@@ -22,27 +29,76 @@ func parseTokens(tokens []Token) (Expr[string], error) {
 }
 
 func parseExpression(tokens []Token, start int) (Expr[string], int, error) {
-	if COMMA_OPERATOR {
+	if COMMA_OPERATOR && TERNARY_OPERATOR {
 		return parseComma(tokens, start)
+	} else if COMMA_OPERATOR {
+		return parseComma(tokens, start)
+	} else if TERNARY_OPERATOR {
+		return parseTernary(tokens, start)
 	}
 
 	return parseEquality(tokens, start)
 }
 
 func parseComma(tokens []Token, start int) (Expr[string], int, error) {
-	expr, end, err := parseEquality(tokens, start)
+	var expr Expr[string]
+	var end int
+	var err error
+
+	if TERNARY_OPERATOR {
+		expr, end, err = parseTernary(tokens, start)
+	} else {
+		expr, end, err = parseEquality(tokens, start)
+	}
 	if err != nil || end >= len(tokens) {
 		return expr, end, err
 	}
 
 	for end < len(tokens) && tokens[end].Type == COMMA {
-		right, right_end, err := parseEquality(tokens, end+1)
+		var right Expr[string]
+		var right_end int
+		if TERNARY_OPERATOR {
+			right, right_end, err = parseTernary(tokens, end+1)
+		} else {
+			right, right_end, err = parseEquality(tokens, end+1)
+		}
 		if err != nil {
 			return right, right_end, err
 		}
 
 		expr = BinaryExpr[string]{Left: expr, Operator: tokens[end], Right: right}
 		end = right_end
+	}
+
+	return expr, end, nil
+}
+
+func parseTernary(tokens []Token, start int) (Expr[string], int, error) {
+	expr, end, err := parseEquality(tokens, start)
+	if err != nil || end >= len(tokens) {
+		return expr, end, err
+	}
+
+	if end < len(tokens) && tokens[end].Type == QUESTION_MARK {
+		true_expr, true_expr_end, err := parseTernary(tokens, end+1)
+		if err != nil {
+			return true_expr, true_expr_end, err
+		}
+
+		if true_expr_end < len(tokens) && tokens[true_expr_end].Type != COLON {
+			return true_expr, true_expr_end, &ParserError{
+				Token:   tokens[true_expr_end],
+				Message: "Expected ':' after true branch of ternary expression",
+			}
+		}
+
+		false_expr, false_expr_end, err := parseTernary(tokens, true_expr_end+1)
+		if err != nil {
+			return false_expr, false_expr_end, err
+		}
+
+		expr = TernaryExpr[string]{Condition: expr, TrueExpr: true_expr, FalseExpr: false_expr}
+		end = false_expr_end
 	}
 
 	return expr, end, nil

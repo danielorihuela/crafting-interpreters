@@ -47,3 +47,50 @@ func TestParserWithCommaOperator(t *testing.T) {
 		}
 	}
 }
+
+func TestParseWithTernaryOperator(t *testing.T) {
+	if !TERNARY_OPERATOR {
+		t.Skip("TERNARY_OPERATOR feature is not enabled")
+	}
+
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"true ? 1 : 2", "(? true 1.0 2.0)"},
+		{"(3 > 2) ? 4 : 5", "(? (group (> 3.0 2.0)) 4.0 5.0)"},
+		{"(6 == 6) ? (7 + 8) : (9 - 10)", "(? (group (== 6.0 6.0)) (group (+ 7.0 8.0)) (group (- 9.0 10.0)))"},
+	}
+
+	for _, test := range tests {
+		tokens, _ := scanTokens(test.input)
+		expr, _ := parseTokens(tokens)
+		result := expr.Accept(AstPrinter{})
+		if result != test.expected {
+			t.Errorf("Expected '%s', got '%s'", test.expected, result)
+		}
+	}
+}
+
+func TestParserWithCommaAndTernaryOperators(t *testing.T) {
+	if !COMMA_OPERATOR || !TERNARY_OPERATOR {
+		t.Skip("COMMA_OPERATOR and TERNARY_OPERATOR features are not both enabled")
+	}
+
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"1, 2 ? 3 : 4", "(, 1.0 (? 2.0 3.0 4.0))"},
+		{"(5, 6) ? (7 + 8) : (9 - 10)", "(? (group (, 5.0 6.0)) (group (+ 7.0 8.0)) (group (- 9.0 10.0)))"},
+	}
+
+	for _, test := range tests {
+		tokens, _ := scanTokens(test.input)
+		expr, _ := parseTokens(tokens)
+		result := expr.Accept(AstPrinter{})
+		if result != test.expected {
+			t.Errorf("Expected '%s', got '%s'", test.expected, result)
+		}
+	}
+}

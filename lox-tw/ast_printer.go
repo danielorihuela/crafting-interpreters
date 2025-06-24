@@ -43,3 +43,7 @@ func (p AstPrinter) VisitLiteralExpr(expr LiteralExpr[string]) string {
 func (p AstPrinter) VisitUnaryExpr(expr UnaryExpr[string]) string {
 	return "(" + expr.Operator.Lexeme + " " + expr.Right.Accept(p) + ")"
 }
+
+func (p AstPrinter) VisitTernaryExpr(expr TernaryExpr[string]) string {
+	return "(? " + expr.Condition.Accept(p) + " " + expr.TrueExpr.Accept(p) + " " + expr.FalseExpr.Accept(p) + ")"
+}
