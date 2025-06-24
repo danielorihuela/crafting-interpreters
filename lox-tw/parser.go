@@ -8,6 +8,11 @@ term           → factor ( ( "-" | "+" ) factor )* ;
 factor         → unary ( ( "/" | "*" ) unary )* ;
 unary          → ( "!" | "-" ) unary | primary ;
 primary        → NUMBER | STRING | "true" | "false" | "nil" | "(" expression ")" ;
+
+with comma operator
+
+expression     → comma ;
+comma          → equality ( "," equality )* ;
 */
 package main
 
@@ -17,7 +22,30 @@ func parseTokens(tokens []Token) (Expr[string], error) {
 }
 
 func parseExpression(tokens []Token, start int) (Expr[string], int, error) {
+	if COMMA_OPERATOR {
+		return parseComma(tokens, start)
+	}
+
 	return parseEquality(tokens, start)
+}
+
+func parseComma(tokens []Token, start int) (Expr[string], int, error) {
+	expr, end, err := parseEquality(tokens, start)
+	if err != nil || end >= len(tokens) {
+		return expr, end, err
+	}
+
+	for end < len(tokens) && tokens[end].Type == COMMA {
+		right, right_end, err := parseEquality(tokens, end+1)
+		if err != nil {
+			return right, right_end, err
+		}
+
+		expr = BinaryExpr[string]{Left: expr, Operator: tokens[end], Right: right}
+		end = right_end
+	}
+
+	return expr, end, nil
 }
 
 func parseEquality(tokens []Token, start int) (Expr[string], int, error) {
