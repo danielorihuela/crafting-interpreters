@@ -50,24 +50,24 @@ func parseComma(tokens []Token, start int) (Expr[string], int, error) {
 	} else {
 		expr, end, err = parseEquality(tokens, start)
 	}
-	if err != nil || end >= len(tokens) {
+	if err != nil {
 		return expr, end, err
 	}
 
-	for end < len(tokens) && tokens[end].Type == COMMA {
-		var right Expr[string]
-		var right_end int
+	for tokens[end].Type == COMMA {
+		var rightExpr Expr[string]
+		var rightEnd int
 		if TERNARY_OPERATOR {
-			right, right_end, err = parseTernary(tokens, end+1)
+			rightExpr, rightEnd, err = parseTernary(tokens, end+1)
 		} else {
-			right, right_end, err = parseEquality(tokens, end+1)
+			rightExpr, rightEnd, err = parseEquality(tokens, end+1)
 		}
 		if err != nil {
-			return right, right_end, err
+			return rightExpr, rightEnd, err
 		}
 
-		expr = BinaryExpr[string]{Left: expr, Operator: tokens[end], Right: right}
-		end = right_end
+		expr = BinaryExpr[string]{Left: expr, Operator: tokens[end], Right: rightExpr}
+		end = rightEnd
 	}
 
 	return expr, end, nil
@@ -75,30 +75,30 @@ func parseComma(tokens []Token, start int) (Expr[string], int, error) {
 
 func parseTernary(tokens []Token, start int) (Expr[string], int, error) {
 	expr, end, err := parseEquality(tokens, start)
-	if err != nil || end >= len(tokens) {
+	if err != nil {
 		return expr, end, err
 	}
 
-	if end < len(tokens) && tokens[end].Type == QUESTION_MARK {
-		true_expr, true_expr_end, err := parseTernary(tokens, end+1)
+	if tokens[end].Type == QUESTION_MARK {
+		trueExpr, trueEnd, err := parseTernary(tokens, end+1)
 		if err != nil {
-			return true_expr, true_expr_end, err
+			return trueExpr, trueEnd, err
 		}
 
-		if true_expr_end < len(tokens) && tokens[true_expr_end].Type != COLON {
-			return true_expr, true_expr_end, &ParserError{
-				Token:   tokens[true_expr_end],
+		if tokens[trueEnd].Type != COLON {
+			return trueExpr, trueEnd, &ParserError{
+				Token:   tokens[trueEnd],
 				Message: "Expected ':' after true branch of ternary expression",
 			}
 		}
 
-		false_expr, false_expr_end, err := parseTernary(tokens, true_expr_end+1)
+		falseExpr, falseEnd, err := parseTernary(tokens, trueEnd+1)
 		if err != nil {
-			return false_expr, false_expr_end, err
+			return falseExpr, falseEnd, err
 		}
 
-		expr = TernaryExpr[string]{Condition: expr, TrueExpr: true_expr, FalseExpr: false_expr}
-		end = false_expr_end
+		expr = TernaryExpr[string]{Condition: expr, TrueExpr: trueExpr, FalseExpr: falseExpr}
+		end = falseEnd
 	}
 
 	return expr, end, nil
@@ -106,18 +106,18 @@ func parseTernary(tokens []Token, start int) (Expr[string], int, error) {
 
 func parseEquality(tokens []Token, start int) (Expr[string], int, error) {
 	expr, end, err := parseComparison(tokens, start)
-	if err != nil || end >= len(tokens) {
+	if err != nil {
 		return expr, end, err
 	}
 
-	for end < len(tokens) && (tokens[end].Type == EQUAL_EQUAL || tokens[end].Type == BANG_EQUAL) {
-		right, right_end, err := parseComparison(tokens, end+1)
+	for tokens[end].Type == EQUAL_EQUAL || tokens[end].Type == BANG_EQUAL {
+		righExpr, rightEnd, err := parseComparison(tokens, end+1)
 		if err != nil {
-			return right, right_end, err
+			return righExpr, rightEnd, err
 		}
 
-		expr = BinaryExpr[string]{Left: expr, Operator: tokens[end], Right: right}
-		end = right_end
+		expr = BinaryExpr[string]{Left: expr, Operator: tokens[end], Right: righExpr}
+		end = rightEnd
 	}
 
 	return expr, end, nil
@@ -125,19 +125,19 @@ func parseEquality(tokens []Token, start int) (Expr[string], int, error) {
 
 func parseComparison(tokens []Token, start int) (Expr[string], int, error) {
 	expr, end, err := parseTerm(tokens, start)
-	if err != nil || end >= len(tokens) {
+	if err != nil {
 		return expr, end, err
 	}
 
-	for end < len(tokens) && (tokens[end].Type == LESS || tokens[end].Type == LESS_EQUAL ||
-		tokens[end].Type == GREATER || tokens[end].Type == GREATER_EQUAL) {
-		right, right_end, err := parseTerm(tokens, end+1)
+	for tokens[end].Type == LESS || tokens[end].Type == LESS_EQUAL ||
+		tokens[end].Type == GREATER || tokens[end].Type == GREATER_EQUAL {
+		rightExpr, rightEnd, err := parseTerm(tokens, end+1)
 		if err != nil {
-			return right, right_end, err
+			return rightExpr, rightEnd, err
 		}
 
-		expr = BinaryExpr[string]{Left: expr, Operator: tokens[end], Right: right}
-		end = right_end
+		expr = BinaryExpr[string]{Left: expr, Operator: tokens[end], Right: rightExpr}
+		end = rightEnd
 	}
 
 	return expr, end, nil
@@ -145,18 +145,18 @@ func parseComparison(tokens []Token, start int) (Expr[string], int, error) {
 
 func parseTerm(tokens []Token, start int) (Expr[string], int, error) {
 	expr, end, err := parseFactor(tokens, start)
-	if err != nil || end >= len(tokens) {
+	if err != nil {
 		return expr, end, err
 	}
 
-	for end < len(tokens) && (tokens[end].Type == PLUS || tokens[end].Type == MINUS) {
-		right, right_end, err := parseFactor(tokens, end+1)
+	for tokens[end].Type == PLUS || tokens[end].Type == MINUS {
+		rightExpr, rightEnd, err := parseFactor(tokens, end+1)
 		if err != nil {
-			return right, right_end, err
+			return rightExpr, rightEnd, err
 		}
 
-		expr = BinaryExpr[string]{Left: expr, Operator: tokens[end], Right: right}
-		end = right_end
+		expr = BinaryExpr[string]{Left: expr, Operator: tokens[end], Right: rightExpr}
+		end = rightEnd
 	}
 
 	return expr, end, nil
@@ -164,70 +164,49 @@ func parseTerm(tokens []Token, start int) (Expr[string], int, error) {
 
 func parseFactor(tokens []Token, start int) (Expr[string], int, error) {
 	expr, end, err := parseUnary(tokens, start)
-	if err != nil || end >= len(tokens) {
+	if err != nil {
 		return expr, end, err
 	}
 
-	for end < len(tokens) && (tokens[end].Type == STAR || tokens[end].Type == SLASH) {
-		right, right_end, err := parseUnary(tokens, end+1)
+	for tokens[end].Type == STAR || tokens[end].Type == SLASH {
+		rightExpr, rightEnd, err := parseUnary(tokens, end+1)
 		if err != nil {
-			return right, right_end, err
+			return rightExpr, rightEnd, err
 		}
 
-		expr = BinaryExpr[string]{Left: expr, Operator: tokens[end], Right: right}
-		end = right_end
+		expr = BinaryExpr[string]{Left: expr, Operator: tokens[end], Right: rightExpr}
+		end = rightEnd
 	}
 
 	return expr, end, nil
 }
 
 func parseUnary(tokens []Token, start int) (Expr[string], int, error) {
-	if start >= len(tokens) {
-		return parsePrimary(tokens, start)
-	}
-
 	tokenType := tokens[start].Type
 	if tokenType != MINUS && tokenType != BANG {
 		return parsePrimary(tokens, start)
 	}
 
-	right, end, err := parseUnary(tokens, start+1)
+	expr, end, err := parseUnary(tokens, start+1)
 	if err != nil {
-		return nil, 0, err
+		return expr, end, err
 	}
 
-	return UnaryExpr[string]{Operator: tokens[start], Right: right}, end, nil
+	return UnaryExpr[string]{Operator: tokens[start], Right: expr}, end, nil
 }
 
 func parsePrimary(tokens []Token, start int) (Expr[string], int, error) {
-	if len(tokens) <= int(start) {
-		return nil, 0, &ParserError{
-			Token:   EofToken(tokens[start-1].Position, tokens[start-1].Line),
-			Message: "Expected expression",
-		}
-	}
-
 	switch tokens[start].Type {
-	case NUMBER:
-		return LiteralExpr[string]{Value: tokens[start].Literal}, start + 1, nil
-	case STRING:
+	case NUMBER, STRING, NIL:
 		return LiteralExpr[string]{Value: tokens[start].Literal}, start + 1, nil
 	case TRUE:
 		return LiteralExpr[string]{Value: true}, start + 1, nil
 	case FALSE:
 		return LiteralExpr[string]{Value: false}, start + 1, nil
-	case NIL:
-		return LiteralExpr[string]{Value: nil}, start + 1, nil
 	case LEFT_PAREN:
 		expr, end, err := parseExpression(tokens, start+1)
 		if err != nil {
 			return nil, 0, err
-		}
-		if end >= int(len(tokens)) {
-			return nil, 0, &ParserError{
-				Token:   EofToken(tokens[end-1].Position, tokens[end-1].Line),
-				Message: "Expected ')' after expression",
-			}
 		}
 
 		if tokens[end].Type != RIGHT_PAREN {
@@ -236,6 +215,7 @@ func parsePrimary(tokens []Token, start int) (Expr[string], int, error) {
 				Message: "Expected ')' after expression",
 			}
 		}
+
 		return GroupingExpr[string]{Expression: expr}, end + 1, nil
 	default:
 		return nil, 0, &ParserError{
