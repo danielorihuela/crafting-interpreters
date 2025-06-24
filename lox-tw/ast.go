@@ -18,6 +18,7 @@ type ExprVisitor[T any] interface {
 	VisitLiteralExpr(expr LiteralExpr[T]) T
 	VisitUnaryExpr(expr UnaryExpr[T]) T
 	VisitTernaryExpr(expr TernaryExpr[T]) T
+	VisitNothingExpr(expr NothingExpr[T]) T
 }
 
 type BinaryExpr[T any] struct {
@@ -63,4 +64,10 @@ type TernaryExpr[T any] struct {
 
 func (t TernaryExpr[T]) Accept(visitor ExprVisitor[T]) T {
 	return visitor.VisitTernaryExpr(t)
+}
+
+type NothingExpr[T any] struct{}
+
+func (n NothingExpr[T]) Accept(visitor ExprVisitor[T]) T {
+	return visitor.VisitNothingExpr(n)
 }

@@ -47,3 +47,7 @@ func (p AstPrinter) VisitUnaryExpr(expr UnaryExpr[string]) string {
 func (p AstPrinter) VisitTernaryExpr(expr TernaryExpr[string]) string {
 	return "(? " + expr.Condition.Accept(p) + " " + expr.TrueExpr.Accept(p) + " " + expr.FalseExpr.Accept(p) + ")"
 }
+
+func (p AstPrinter) VisitNothingExpr(expr NothingExpr[string]) string {
+	return "(nothing)"
+}

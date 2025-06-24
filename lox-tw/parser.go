@@ -23,6 +23,11 @@ ternary        → equality ( "?" ternary ":" ternary )* ;
 */
 package main
 
+import (
+	"fmt"
+	"os"
+)
+
 func parseTokens(tokens []Token) (Expr[string], error) {
 	expr, _, err := parseExpression(tokens, 0)
 	return expr, err
@@ -41,8 +46,20 @@ func parseExpression(tokens []Token, start int) (Expr[string], int, error) {
 }
 
 func parseComma(tokens []Token, start int) (Expr[string], int, error) {
-	var expr Expr[string]
 	var end int
+	if BINARY_OPERATOR_ERROR_PRODUCTION {
+		if tokens[start].Type == COMMA {
+			fmt.Fprintf(os.Stderr, "Error: Unexpected '%s' at the start of comma\n", tokens[start].Lexeme)
+			if TERNARY_OPERATOR {
+				_, end, _ = parseTernary(tokens, start)
+			} else {
+				_, end, _ = parseEquality(tokens, start)
+			}
+			return NothingExpr[string]{}, end, nil
+		}
+	}
+
+	var expr Expr[string]
 	var err error
 
 	if TERNARY_OPERATOR {
@@ -105,6 +122,14 @@ func parseTernary(tokens []Token, start int) (Expr[string], int, error) {
 }
 
 func parseEquality(tokens []Token, start int) (Expr[string], int, error) {
+	if BINARY_OPERATOR_ERROR_PRODUCTION {
+		if tokens[start].Type == EQUAL_EQUAL || tokens[start].Type == BANG_EQUAL {
+			fmt.Fprintf(os.Stderr, "Error: Unexpected '%s' at the start of equality\n", tokens[start].Lexeme)
+			_, end, _ := parseComparison(tokens, start+1)
+			return NothingExpr[string]{}, end, nil
+		}
+	}
+
 	expr, end, err := parseComparison(tokens, start)
 	if err != nil {
 		return expr, end, err
@@ -124,6 +149,15 @@ func parseEquality(tokens []Token, start int) (Expr[string], int, error) {
 }
 
 func parseComparison(tokens []Token, start int) (Expr[string], int, error) {
+	if BINARY_OPERATOR_ERROR_PRODUCTION {
+		if tokens[start].Type == LESS || tokens[start].Type == LESS_EQUAL ||
+			tokens[start].Type == GREATER || tokens[start].Type == GREATER_EQUAL {
+			fmt.Fprintf(os.Stderr, "Error: Unexpected '%s' at the start of comparison\n", tokens[start].Lexeme)
+			_, end, _ := parseTerm(tokens, start+1)
+			return NothingExpr[string]{}, end, nil
+		}
+	}
+
 	expr, end, err := parseTerm(tokens, start)
 	if err != nil {
 		return expr, end, err
@@ -144,6 +178,14 @@ func parseComparison(tokens []Token, start int) (Expr[string], int, error) {
 }
 
 func parseTerm(tokens []Token, start int) (Expr[string], int, error) {
+	if BINARY_OPERATOR_ERROR_PRODUCTION {
+		if tokens[start].Type == PLUS {
+			fmt.Fprintf(os.Stderr, "Error: Unexpected '%s' at the start of term\n", tokens[start].Lexeme)
+			_, end, _ := parseFactor(tokens, start+1)
+			return NothingExpr[string]{}, end, nil
+		}
+	}
+
 	expr, end, err := parseFactor(tokens, start)
 	if err != nil {
 		return expr, end, err
@@ -163,6 +205,14 @@ func parseTerm(tokens []Token, start int) (Expr[string], int, error) {
 }
 
 func parseFactor(tokens []Token, start int) (Expr[string], int, error) {
+	if BINARY_OPERATOR_ERROR_PRODUCTION {
+		if tokens[start].Type == STAR || tokens[start].Type == SLASH {
+			fmt.Fprintf(os.Stderr, "Error: Unexpected '%s' at the start of factor\n", tokens[start].Lexeme)
+			_, end, _ := parseUnary(tokens, start+1)
+			return NothingExpr[string]{}, end, nil
+		}
+	}
+
 	expr, end, err := parseUnary(tokens, start)
 	if err != nil {
 		return expr, end, err
