@@ -11,7 +11,7 @@ type ScannerError struct {
 }
 
 func (e *ScannerError) Error() string {
-	return fmt.Sprintf("[line %d] Error %s: %s", e.Line, e.Where, e.Message)
+	return fmt.Sprintf("[line %d] Scanner error %s: %s", e.Line, e.Where, e.Message)
 }
 
 type ParserError struct {
@@ -20,5 +20,14 @@ type ParserError struct {
 }
 
 func (e *ParserError) Error() string {
-	return fmt.Sprintf("[line %d] Error at '%s': %s", e.Token.Line, e.Token.Lexeme, e.Message)
+	return fmt.Sprintf("Parser error at '%s': %s", e.Token.Lexeme, e.Message)
+}
+
+type RuntimeError struct {
+	Token   Token
+	Message string
+}
+
+func (e *RuntimeError) Error() string {
+	return fmt.Sprintf("Runtime error at '%s': %s", e.Token.Lexeme, e.Message)
 }

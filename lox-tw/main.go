@@ -28,8 +28,13 @@ func runFile(path string) {
 	}
 
 	err = run(string(content))
-	if err != nil {
+	switch err.(type) {
+	case *ScannerError:
 		os.Exit(65)
+	case *ParserError:
+		os.Exit(65)
+	case *RuntimeError:
+		os.Exit(70)
 	}
 }
 
@@ -67,10 +72,24 @@ func run(source string) error {
 		}
 	} else if os.Getenv("CHAPTER_06") == "1" {
 		expr, _ := parseTokens(tokens)
-		fmt.Println(expr.Accept(AstPrinter{}))
-	} else {
+		ast, _ := expr.Accept(AstPrinter{})
+		fmt.Println(ast)
+	} else if os.Getenv("CHAPTER_07") == "1" {
 		expr, _ := parseTokens(tokens)
-		fmt.Println(expr.Accept(AstPrinter{}))
+		result, _ := expr.Accept(Interpreter{})
+		fmt.Println(result)
+	} else {
+		expr, err := parseTokens(tokens)
+		if err != nil {
+			return err
+		}
+
+		result, err := expr.Accept(Interpreter{})
+		if err != nil {
+			return err
+		}
+
+		fmt.Println(result)
 	}
 
 	return nil

@@ -16,7 +16,7 @@ func TestAstPrinter(t *testing.T) {
 
 	expected := "(* (- 123) (group 45.67))"
 
-	result := expression.Accept(AstPrinter{})
+	result, _ := expression.Accept(AstPrinter{})
 	if result != expected {
 		t.Errorf("Expected '%s', got '%s'", expected, result)
 	}
@@ -36,7 +36,7 @@ func TestAstRpnPrinter(t *testing.T) {
 
 	expected := "((- 123) (group 45.67) *)"
 
-	result := expression.Accept(AstRpnPrinter{})
+	result, _ := expression.Accept(AstRpnPrinter{})
 	if result != expected {
 		t.Errorf("Expected '%s', got '%s'", expected, result)
 	}
