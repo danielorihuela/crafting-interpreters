@@ -155,10 +155,10 @@ func scanDecimal(source string, start uint, line uint) token.Token {
 		if !allCharactersParsed(source, position) && isDigit(source[position+1]) {
 			position += 1
 		}
-	}
 
-	for !allCharactersParsed(source, position) && isDigit(source[position]) {
-		position += 1
+		for !allCharactersParsed(source, position) && isDigit(source[position]) {
+			position += 1
+		}
 	}
 
 	return token.NumberToken(source[start:position], position, line)
