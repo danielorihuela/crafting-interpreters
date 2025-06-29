@@ -6,7 +6,7 @@ import (
 	"lox-tw/token"
 )
 
-func TestAstPrinter(t *testing.T) {
+func TestPrinter(t *testing.T) {
 	expression := BinaryExpr[string]{
 		Left: UnaryExpr[string]{
 			Operator: token.Token{Type: token.MINUS, Lexeme: "-", Line: 1, Position: 1},
@@ -20,13 +20,13 @@ func TestAstPrinter(t *testing.T) {
 
 	expected := "(* (- 123) (group 45.67))"
 
-	result, _ := expression.Accept(AstPrinter{})
+	result, _ := expression.Accept(Printer{})
 	if result != expected {
 		t.Errorf("Expected '%s', got '%s'", expected, result)
 	}
 }
 
-func TestAstRpnPrinter(t *testing.T) {
+func TestRpnPrinter(t *testing.T) {
 	expression := BinaryExpr[string]{
 		Left: UnaryExpr[string]{
 			Operator: token.Token{Type: token.MINUS, Lexeme: "-", Line: 1, Position: 1},
@@ -40,7 +40,7 @@ func TestAstRpnPrinter(t *testing.T) {
 
 	expected := "((- 123) (group 45.67) *)"
 
-	result, _ := expression.Accept(AstRpnPrinter{})
+	result, _ := expression.Accept(RpnPrinter{})
 	if result != expected {
 		t.Errorf("Expected '%s', got '%s'", expected, result)
 	}

@@ -8,7 +8,7 @@ import (
 func ScanTokens(source string) ([]token.Token, error) {
 	tokens := []token.Token{}
 
-	line, position := uint(1), uint(0)
+	position, line := uint(0), uint(1)
 	for !allCharactersParsed(source, position) {
 		scannedToken, err := scanToken(source, position, line)
 		if err != nil {
@@ -22,7 +22,7 @@ func ScanTokens(source string) ([]token.Token, error) {
 		position, line = scannedToken.Position, scannedToken.Line
 	}
 
-	return append(tokens, token.EofToken(position, line)), nil
+	return append(tokens, token.EofToken(position+1, line)), nil
 }
 
 func scanToken(source string, start uint, line uint) (token.Token, error) {

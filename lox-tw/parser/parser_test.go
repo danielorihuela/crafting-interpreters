@@ -23,7 +23,7 @@ func TestParser(t *testing.T) {
 	for _, test := range tests {
 		tokens, _ := scanner.ScanTokens(test.input)
 		expr, _ := ParseTokens(tokens)
-		result, _ := expr.Accept(ast.AstPrinter{})
+		result, _ := expr.Accept(ast.Printer{})
 		if result != test.expected {
 			t.Errorf("Expected '%s', got '%s'", test.expected, result)
 		}
@@ -47,7 +47,7 @@ func TestParserWithCommaOperator(t *testing.T) {
 	for _, test := range tests {
 		tokens, _ := scanner.ScanTokens(test.input)
 		expr, _ := ParseTokens(tokens)
-		result, _ := expr.Accept(ast.AstPrinter{})
+		result, _ := expr.Accept(ast.Printer{})
 		if result != test.expected {
 			t.Errorf("Expected '%s', got '%s'", test.expected, result)
 		}
@@ -71,7 +71,7 @@ func TestParseWithTernaryOperator(t *testing.T) {
 	for _, test := range tests {
 		tokens, _ := scanner.ScanTokens(test.input)
 		expr, _ := ParseTokens(tokens)
-		result, _ := expr.Accept(ast.AstPrinter{})
+		result, _ := expr.Accept(ast.Printer{})
 		if result != test.expected {
 			t.Errorf("Expected '%s', got '%s'", test.expected, result)
 		}
@@ -94,7 +94,7 @@ func TestParserWithCommaAndTernaryOperators(t *testing.T) {
 	for _, test := range tests {
 		tokens, _ := scanner.ScanTokens(test.input)
 		expr, _ := ParseTokens(tokens)
-		result, _ := expr.Accept(ast.AstPrinter{})
+		result, _ := expr.Accept(ast.Printer{})
 		if result != test.expected {
 			t.Errorf("Expected '%s', got '%s'", test.expected, result)
 		}

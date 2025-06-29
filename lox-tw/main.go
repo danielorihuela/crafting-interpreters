@@ -77,7 +77,7 @@ func run(source string) error {
 		}
 	} else if os.Getenv("CHAPTER_06") == "1" {
 		expr, _ := parser.ParseTokens(tokens)
-		ast, _ := expr.Accept(ast.AstPrinter{})
+		ast, _ := expr.Accept(ast.Printer{})
 		fmt.Println(ast)
 	} else if os.Getenv("CHAPTER_07") == "1" {
 		expr, _ := parser.ParseTokens(tokens)

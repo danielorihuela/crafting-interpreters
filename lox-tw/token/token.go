@@ -56,7 +56,7 @@ func NumberToken(lexeme string, position, line uint) Token {
 	}
 }
 
-func LeftParenToken(line, pos uint) Token {
+func LeftParenToken(pos, line uint) Token {
 	return Token{
 		Type:     LEFT_PAREN,
 		Lexeme:   "(",
@@ -66,7 +66,7 @@ func LeftParenToken(line, pos uint) Token {
 	}
 }
 
-func RightParenToken(line, pos uint) Token {
+func RightParenToken(pos, line uint) Token {
 	return Token{
 		Type:     RIGHT_PAREN,
 		Lexeme:   ")",
