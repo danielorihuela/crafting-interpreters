@@ -1,4 +1,4 @@
-package main
+package scanner
 
 func isSingleLineComment(a, b byte) bool {
 	return a == '/' && b == '/'

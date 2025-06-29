@@ -1,17 +1,20 @@
-package main
+package interpreter
 
 import (
 	"fmt"
 	"strconv"
+
+	"lox-tw/ast"
+	"lox-tw/token"
 )
 
 type Interpreter struct{}
 
-func (i Interpreter) VisitGroupingExpr(expr GroupingExpr[string]) (string, error) {
+func (i Interpreter) VisitGroupingExpr(expr ast.GroupingExpr[string]) (string, error) {
 	return expr.Expression.Accept(i)
 }
 
-func (i Interpreter) VisitTernaryExpr(expr TernaryExpr[string]) (string, error) {
+func (i Interpreter) VisitTernaryExpr(expr ast.TernaryExpr[string]) (string, error) {
 	conditionValue, err := expr.Condition.Accept(i)
 	if err != nil {
 		return conditionValue, err
@@ -24,7 +27,7 @@ func (i Interpreter) VisitTernaryExpr(expr TernaryExpr[string]) (string, error) 
 	}
 }
 
-func (i Interpreter) VisitBinaryExpr(expr BinaryExpr[string]) (string, error) {
+func (i Interpreter) VisitBinaryExpr(expr ast.BinaryExpr[string]) (string, error) {
 	leftValue, err := expr.Left.Accept(i)
 	if err != nil {
 		return leftValue, err
@@ -36,15 +39,15 @@ func (i Interpreter) VisitBinaryExpr(expr BinaryExpr[string]) (string, error) {
 	}
 
 	switch expr.Operator.Type {
-	case COMMA:
+	case token.COMMA:
 		return rightValue, nil
-	case MINUS:
+	case token.MINUS:
 		left, right, err := operandsAreNumbers(leftValue, rightValue, expr.Operator)
 		if err != nil {
 			return expr.Operator.String(), err
 		}
 		return strconv.FormatFloat(left-right, 'f', -1, 64), nil
-	case PLUS:
+	case token.PLUS:
 		left, leftErr := strconv.ParseFloat(leftValue, 64)
 		right, rightErr := strconv.ParseFloat(rightValue, 64)
 		if leftErr == nil && rightErr == nil {
@@ -59,49 +62,49 @@ func (i Interpreter) VisitBinaryExpr(expr BinaryExpr[string]) (string, error) {
 			Token:   expr.Operator,
 			Message: "Operands must be either both numbers or both strings for addition",
 		}
-	case SLASH:
+	case token.SLASH:
 		left, right, err := operandsAreNumbers(leftValue, rightValue, expr.Operator)
 		if err != nil {
 			return expr.Operator.String(), err
 		}
 		return strconv.FormatFloat(left/right, 'f', -1, 64), nil
-	case STAR:
+	case token.STAR:
 		left, right, err := operandsAreNumbers(leftValue, rightValue, expr.Operator)
 		if err != nil {
 			return expr.Operator.String(), err
 		}
 		return strconv.FormatFloat(left*right, 'f', -1, 64), nil
-	case GREATER:
+	case token.GREATER:
 		left, right, err := operandsAreNumbers(leftValue, rightValue, expr.Operator)
 		if err != nil {
 			return expr.Operator.String(), err
 		}
 		return strconv.FormatBool(left > right), nil
-	case GREATER_EQUAL:
+	case token.GREATER_EQUAL:
 		left, right, err := operandsAreNumbers(leftValue, rightValue, expr.Operator)
 		if err != nil {
 			return expr.Operator.String(), err
 		}
 		return strconv.FormatBool(left >= right), nil
-	case LESS:
+	case token.LESS:
 		left, right, err := operandsAreNumbers(leftValue, rightValue, expr.Operator)
 		if err != nil {
 			return expr.Operator.String(), err
 		}
 		return strconv.FormatBool(left < right), nil
-	case LESS_EQUAL:
+	case token.LESS_EQUAL:
 		left, right, err := operandsAreNumbers(leftValue, rightValue, expr.Operator)
 		if err != nil {
 			return expr.Operator.String(), err
 		}
 		return strconv.FormatBool(left <= right), nil
-	case BANG_EQUAL:
+	case token.BANG_EQUAL:
 		left, right, err := operandsAreNumbers(leftValue, rightValue, expr.Operator)
 		if err != nil {
 			return expr.Operator.String(), err
 		}
 		return strconv.FormatBool(left != right), nil
-	case EQUAL_EQUAL:
+	case token.EQUAL_EQUAL:
 		left, right, err := operandsAreNumbers(leftValue, rightValue, expr.Operator)
 		if err != nil {
 			return expr.Operator.String(), err
@@ -112,7 +115,7 @@ func (i Interpreter) VisitBinaryExpr(expr BinaryExpr[string]) (string, error) {
 	return "nil", nil
 }
 
-func operandsAreNumbers(leftValue, rightValue string, operator Token) (float64, float64, error) {
+func operandsAreNumbers(leftValue, rightValue string, operator token.Token) (float64, float64, error) {
 	left, err := strconv.ParseFloat(leftValue, 64)
 	if err != nil {
 		return 0, 0, &RuntimeError{
@@ -132,14 +135,14 @@ func operandsAreNumbers(leftValue, rightValue string, operator Token) (float64, 
 	return left, right, nil
 }
 
-func (i Interpreter) VisitUnaryExpr(expr UnaryExpr[string]) (string, error) {
+func (i Interpreter) VisitUnaryExpr(expr ast.UnaryExpr[string]) (string, error) {
 	rightValue, err := expr.Right.Accept(i)
 	if err != nil {
 		return rightValue, err
 	}
 
 	switch expr.Operator.Type {
-	case MINUS:
+	case token.MINUS:
 		parsedValue, err := strconv.ParseFloat(rightValue, 64)
 		if err != nil {
 			return rightValue, &RuntimeError{
@@ -148,7 +151,7 @@ func (i Interpreter) VisitUnaryExpr(expr UnaryExpr[string]) (string, error) {
 			}
 		}
 		return strconv.FormatFloat(-parsedValue, 'f', -1, 64), nil
-	case BANG:
+	case token.BANG:
 		parsedValue, err := strconv.ParseBool(rightValue)
 		if err != nil {
 			return rightValue, &RuntimeError{
@@ -162,10 +165,10 @@ func (i Interpreter) VisitUnaryExpr(expr UnaryExpr[string]) (string, error) {
 	return "nil", nil
 }
 
-func (i Interpreter) VisitLiteralExpr(expr LiteralExpr[string]) (string, error) {
+func (i Interpreter) VisitLiteralExpr(expr ast.LiteralExpr[string]) (string, error) {
 	return fmt.Sprintf("%v", expr.Value), nil
 }
 
-func (i Interpreter) VisitNothingExpr(expr NothingExpr[string]) (string, error) {
+func (i Interpreter) VisitNothingExpr(expr ast.NothingExpr[string]) (string, error) {
 	return "nil", nil
 }

@@ -1,7 +1,12 @@
-package main
+package scanner
 
-func scanTokens(source string) ([]Token, error) {
-	tokens := []Token{}
+import (
+	"lox-tw/features"
+	"lox-tw/token"
+)
+
+func ScanTokens(source string) ([]token.Token, error) {
+	tokens := []token.Token{}
 
 	line, position := uint(1), uint(0)
 	for !allCharactersParsed(source, position) {
@@ -10,17 +15,17 @@ func scanTokens(source string) ([]Token, error) {
 			return nil, err
 		}
 
-		if scannedToken.Type != NOTHING {
+		if scannedToken.Type != token.NOTHING {
 			tokens = append(tokens, scannedToken)
 		}
 
 		position, line = scannedToken.Position, scannedToken.Line
 	}
 
-	return append(tokens, EofToken(position, line)), nil
+	return append(tokens, token.EofToken(position, line)), nil
 }
 
-func scanToken(source string, start uint, line uint) (Token, error) {
+func scanToken(source string, start uint, line uint) (token.Token, error) {
 	position := start
 	currentCharacter := source[position]
 
@@ -33,15 +38,15 @@ func scanToken(source string, start uint, line uint) (Token, error) {
 		return scanSingleLineComment(source, position, line)
 	}
 
-	if MULTILINE_COMMENTS {
+	if features.MULTILINE_COMMENTS {
 		if isMultiLineCommentStart(currentCharacter, nextCharacter) {
 			return scanMultiLineComment(source, position, line)
 		}
 	}
 
-	tokenType := TrySingleCharTokenType(currentCharacter)
-	if tokenType != NOTHING {
-		return Token{
+	tokenType := token.TrySingleCharTokenType(currentCharacter)
+	if tokenType != token.NOTHING {
+		return token.Token{
 			Type:     tokenType,
 			Lexeme:   string(currentCharacter),
 			Literal:  nil,
@@ -50,9 +55,9 @@ func scanToken(source string, start uint, line uint) (Token, error) {
 		}, nil
 	}
 
-	tokenType, length := TryComparisonOperatorTokenType(currentCharacter, nextCharacter)
-	if tokenType != NOTHING {
-		return Token{
+	tokenType, length := token.TryComparisonOperatorTokenType(currentCharacter, nextCharacter)
+	if tokenType != token.NOTHING {
+		return token.Token{
 			Type:     tokenType,
 			Lexeme:   source[position : position+length],
 			Literal:  nil,
@@ -73,36 +78,36 @@ func scanToken(source string, start uint, line uint) (Token, error) {
 	case ' ':
 	case '\r':
 	case '\t':
-		return NilToken(position+1, line), nil
+		return token.NilToken(position+1, line), nil
 	case '\n':
-		return NilToken(position+1, line+1), nil
+		return token.NilToken(position+1, line+1), nil
 	case '"':
 		return scanString(source, position, line)
 	default:
-		return NilToken(position, line), &ScannerError{
+		return token.NilToken(position, line), &ScannerError{
 			Line:    line,
 			Where:   "",
 			Message: "Unexpected character: " + string(source[position]),
 		}
 	}
 
-	return NilToken(position+1, line), nil
+	return token.NilToken(position+1, line), nil
 }
 
-func scanSingleLineComment(source string, start uint, line uint) (Token, error) {
+func scanSingleLineComment(source string, start uint, line uint) (token.Token, error) {
 	position := start + 2
 	for !allCharactersParsed(source, position) && source[position] != '\n' {
 		position += 1
 	}
 
-	return NilToken(position, line), nil
+	return token.NilToken(position, line), nil
 }
 
-func scanMultiLineComment(source string, start uint, line uint) (Token, error) {
+func scanMultiLineComment(source string, start uint, line uint) (token.Token, error) {
 	position := start + 2
 	for !allCharactersParsed(source, position+1) {
 		if isMultiLineCommentEnd(source[position], source[position+1]) {
-			return NilToken(position+2, line), nil
+			return token.NilToken(position+2, line), nil
 		}
 
 		if source[position] == '\n' {
@@ -111,14 +116,14 @@ func scanMultiLineComment(source string, start uint, line uint) (Token, error) {
 		position += 1
 	}
 
-	return NilToken(position, line), &ScannerError{
+	return token.NilToken(position, line), &ScannerError{
 		Line:    line,
 		Where:   "",
 		Message: "Unterminated multi-line comment",
 	}
 }
 
-func scanString(source string, start uint, line uint) (Token, error) {
+func scanString(source string, start uint, line uint) (token.Token, error) {
 	position := start + 1
 	for !allCharactersParsed(source, position) && source[position] != '"' {
 		if source[position] == '\n' {
@@ -128,7 +133,7 @@ func scanString(source string, start uint, line uint) (Token, error) {
 	}
 
 	if allCharactersParsed(source, position) {
-		return NilToken(position, line), &ScannerError{
+		return token.NilToken(position, line), &ScannerError{
 			Line:    line,
 			Where:   "",
 			Message: "Unterminated string",
@@ -136,10 +141,10 @@ func scanString(source string, start uint, line uint) (Token, error) {
 	}
 
 	position += 1
-	return StringToken(source[start:position], position, line), nil
+	return token.StringToken(source[start:position], position, line), nil
 }
 
-func scanDecimal(source string, start uint, line uint) Token {
+func scanDecimal(source string, start uint, line uint) token.Token {
 	position := start
 
 	for !allCharactersParsed(source, position) && isDigit(source[position]) {
@@ -156,21 +161,21 @@ func scanDecimal(source string, start uint, line uint) Token {
 		position += 1
 	}
 
-	return NumberToken(source[start:position], position, line)
+	return token.NumberToken(source[start:position], position, line)
 }
 
-func scanIdentifier(source string, start uint, line uint) Token {
+func scanIdentifier(source string, start uint, line uint) token.Token {
 	position := start
 	for !allCharactersParsed(source, position) && isAlphaNumeric(source[position]) {
 		position += 1
 	}
 
-	tokenType := TryKeywordTokenType(source[start:position])
-	if tokenType == NOTHING {
-		tokenType = IDENTIFIER
+	tokenType := token.TryKeywordTokenType(source[start:position])
+	if tokenType == token.NOTHING {
+		tokenType = token.IDENTIFIER
 	}
 
-	return Token{
+	return token.Token{
 		Type:     tokenType,
 		Lexeme:   source[start:position],
 		Literal:  nil,

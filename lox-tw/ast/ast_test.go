@@ -1,14 +1,18 @@
-package main
+package ast
 
-import "testing"
+import (
+	"testing"
+
+	"lox-tw/token"
+)
 
 func TestAstPrinter(t *testing.T) {
 	expression := BinaryExpr[string]{
 		Left: UnaryExpr[string]{
-			Operator: Token{Type: MINUS, Lexeme: "-", Line: 1, Position: 1},
+			Operator: token.Token{Type: token.MINUS, Lexeme: "-", Line: 1, Position: 1},
 			Right:    LiteralExpr[string]{Value: 123},
 		},
-		Operator: Token{Type: STAR, Lexeme: "*", Line: 1, Position: 5},
+		Operator: token.Token{Type: token.STAR, Lexeme: "*", Line: 1, Position: 5},
 		Right: GroupingExpr[string]{
 			Expression: LiteralExpr[string]{Value: 45.67},
 		},
@@ -25,10 +29,10 @@ func TestAstPrinter(t *testing.T) {
 func TestAstRpnPrinter(t *testing.T) {
 	expression := BinaryExpr[string]{
 		Left: UnaryExpr[string]{
-			Operator: Token{Type: MINUS, Lexeme: "-", Line: 1, Position: 1},
+			Operator: token.Token{Type: token.MINUS, Lexeme: "-", Line: 1, Position: 1},
 			Right:    LiteralExpr[string]{Value: 123},
 		},
-		Operator: Token{Type: STAR, Lexeme: "*", Line: 1, Position: 5},
+		Operator: token.Token{Type: token.STAR, Lexeme: "*", Line: 1, Position: 5},
 		Right: GroupingExpr[string]{
 			Expression: LiteralExpr[string]{Value: 45.67},
 		},

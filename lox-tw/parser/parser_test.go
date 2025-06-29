@@ -1,6 +1,12 @@
-package main
+package parser
 
-import "testing"
+import (
+	"testing"
+
+	"lox-tw/ast"
+	"lox-tw/features"
+	"lox-tw/scanner"
+)
 
 func TestParser(t *testing.T) {
 	tests := []struct {
@@ -15,9 +21,9 @@ func TestParser(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		tokens, _ := scanTokens(test.input)
-		expr, _ := parseTokens(tokens)
-		result, _ := expr.Accept(AstPrinter{})
+		tokens, _ := scanner.ScanTokens(test.input)
+		expr, _ := ParseTokens(tokens)
+		result, _ := expr.Accept(ast.AstPrinter{})
 		if result != test.expected {
 			t.Errorf("Expected '%s', got '%s'", test.expected, result)
 		}
@@ -25,7 +31,7 @@ func TestParser(t *testing.T) {
 }
 
 func TestParserWithCommaOperator(t *testing.T) {
-	if !COMMA_OPERATOR {
+	if !features.COMMA_OPERATOR {
 		t.Skip("COMMA_OPERATOR feature is not enabled")
 	}
 
@@ -39,9 +45,9 @@ func TestParserWithCommaOperator(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		tokens, _ := scanTokens(test.input)
-		expr, _ := parseTokens(tokens)
-		result, _ := expr.Accept(AstPrinter{})
+		tokens, _ := scanner.ScanTokens(test.input)
+		expr, _ := ParseTokens(tokens)
+		result, _ := expr.Accept(ast.AstPrinter{})
 		if result != test.expected {
 			t.Errorf("Expected '%s', got '%s'", test.expected, result)
 		}
@@ -49,7 +55,7 @@ func TestParserWithCommaOperator(t *testing.T) {
 }
 
 func TestParseWithTernaryOperator(t *testing.T) {
-	if !TERNARY_OPERATOR {
+	if !features.TERNARY_OPERATOR {
 		t.Skip("TERNARY_OPERATOR feature is not enabled")
 	}
 
@@ -63,9 +69,9 @@ func TestParseWithTernaryOperator(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		tokens, _ := scanTokens(test.input)
-		expr, _ := parseTokens(tokens)
-		result, _ := expr.Accept(AstPrinter{})
+		tokens, _ := scanner.ScanTokens(test.input)
+		expr, _ := ParseTokens(tokens)
+		result, _ := expr.Accept(ast.AstPrinter{})
 		if result != test.expected {
 			t.Errorf("Expected '%s', got '%s'", test.expected, result)
 		}
@@ -73,7 +79,7 @@ func TestParseWithTernaryOperator(t *testing.T) {
 }
 
 func TestParserWithCommaAndTernaryOperators(t *testing.T) {
-	if !COMMA_OPERATOR || !TERNARY_OPERATOR {
+	if !features.COMMA_OPERATOR || !features.TERNARY_OPERATOR {
 		t.Skip("COMMA_OPERATOR and TERNARY_OPERATOR features are not both enabled")
 	}
 
@@ -86,9 +92,9 @@ func TestParserWithCommaAndTernaryOperators(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		tokens, _ := scanTokens(test.input)
-		expr, _ := parseTokens(tokens)
-		result, _ := expr.Accept(AstPrinter{})
+		tokens, _ := scanner.ScanTokens(test.input)
+		expr, _ := ParseTokens(tokens)
+		result, _ := expr.Accept(ast.AstPrinter{})
 		if result != test.expected {
 			t.Errorf("Expected '%s', got '%s'", test.expected, result)
 		}

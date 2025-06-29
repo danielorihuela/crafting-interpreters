@@ -6,7 +6,9 @@ unary          → ( "-" | "!" ) expression ;
 binary         → expression operator expression ;
 operator       → "==" | "!=" | "<" | "<=" | ">" | ">=" | "+"  | "-"  | "*" | "/" ;
 */
-package main
+package ast
+
+import "lox-tw/token"
 
 type Expr[T any] interface {
 	Accept(visitor ExprVisitor[T]) (T, error)
@@ -41,7 +43,7 @@ func (t TernaryExpr[T]) Accept(visitor ExprVisitor[T]) (T, error) {
 
 type BinaryExpr[T any] struct {
 	Left     Expr[T]
-	Operator Token
+	Operator token.Token
 	Right    Expr[T]
 }
 
@@ -50,7 +52,7 @@ func (b BinaryExpr[T]) Accept(visitor ExprVisitor[T]) (T, error) {
 }
 
 type UnaryExpr[T any] struct {
-	Operator Token
+	Operator token.Token
 	Right    Expr[T]
 }
 

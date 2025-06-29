@@ -5,6 +5,11 @@ import (
 	"os"
 
 	"bufio"
+
+	"lox-tw/ast"
+	"lox-tw/interpreter"
+	"lox-tw/parser"
+	"lox-tw/scanner"
 )
 
 func main() {
@@ -29,11 +34,11 @@ func runFile(path string) {
 
 	err = run(string(content))
 	switch err.(type) {
-	case *ScannerError:
+	case *scanner.ScannerError:
 		os.Exit(65)
-	case *ParserError:
+	case *parser.ParserError:
 		os.Exit(65)
-	case *RuntimeError:
+	case *interpreter.RuntimeError:
 		os.Exit(70)
 	}
 }
@@ -60,7 +65,7 @@ func runPrompt() {
 }
 
 func run(source string) error {
-	tokens, err := scanTokens(source)
+	tokens, err := scanner.ScanTokens(source)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error scanning tokens: %v\n", err)
 		return err
@@ -71,20 +76,20 @@ func run(source string) error {
 			fmt.Println(token.String())
 		}
 	} else if os.Getenv("CHAPTER_06") == "1" {
-		expr, _ := parseTokens(tokens)
-		ast, _ := expr.Accept(AstPrinter{})
+		expr, _ := parser.ParseTokens(tokens)
+		ast, _ := expr.Accept(ast.AstPrinter{})
 		fmt.Println(ast)
 	} else if os.Getenv("CHAPTER_07") == "1" {
-		expr, _ := parseTokens(tokens)
-		result, _ := expr.Accept(Interpreter{})
+		expr, _ := parser.ParseTokens(tokens)
+		result, _ := expr.Accept(interpreter.Interpreter{})
 		fmt.Println(result)
 	} else {
-		expr, err := parseTokens(tokens)
+		expr, err := parser.ParseTokens(tokens)
 		if err != nil {
 			return err
 		}
 
-		result, err := expr.Accept(Interpreter{})
+		result, err := expr.Accept(interpreter.Interpreter{})
 		if err != nil {
 			return err
 		}
