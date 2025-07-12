@@ -48,11 +48,16 @@ func (i Interpreter) VisitTernaryExpr(expr ast.TernaryExpr[any]) (any, error) {
 		return conditionValue, err
 	}
 
-	if conditionValue == true {
-		return expr.TrueExpr.Accept(i)
-	} else {
+	if conditionValue == nil {
 		return expr.FalseExpr.Accept(i)
 	}
+
+	value, ok := conditionValue.(bool)
+	if ok && !value {
+		return expr.FalseExpr.Accept(i)
+	}
+
+	return expr.TrueExpr.Accept(i)
 }
 
 func (i Interpreter) VisitBinaryExpr(expr ast.BinaryExpr[any]) (any, error) {
@@ -75,9 +80,9 @@ func (i Interpreter) VisitBinaryExpr(expr ast.BinaryExpr[any]) (any, error) {
 			return result, nil
 		}
 
-		left, conv := leftValue.(string)
-		right, conv2 := rightValue.(string)
-		if conv && conv2 {
+		left, ok := leftValue.(string)
+		right, ok2 := rightValue.(string)
+		if ok && ok2 {
 			return left + right, nil
 		}
 
@@ -95,16 +100,16 @@ func (i Interpreter) VisitBinaryExpr(expr ast.BinaryExpr[any]) (any, error) {
 }
 
 func computeOpFloats(leftValue, rightValue any, operator token.Token) (any, error) {
-	left, conv := leftValue.(float64)
-	if !conv {
+	left, ok := leftValue.(float64)
+	if !ok {
 		return leftValue, &RuntimeError{
 			Token:   operator,
 			Message: "Invalid left operand for " + operator.Lexeme,
 		}
 	}
 
-	right, conv := rightValue.(float64)
-	if !conv {
+	right, ok := rightValue.(float64)
+	if !ok {
 		return rightValue, &RuntimeError{
 			Token:   operator,
 			Message: "Invalid right operand for " + operator.Lexeme,
@@ -143,8 +148,8 @@ func (i Interpreter) VisitUnaryExpr(expr ast.UnaryExpr[any]) (any, error) {
 
 	switch expr.Operator.Type {
 	case token.MINUS:
-		parsedValue, conv := rightValue.(float64)
-		if !conv {
+		parsedValue, ok := rightValue.(float64)
+		if !ok {
 			return rightValue, &RuntimeError{
 				Token:   expr.Operator,
 				Message: "Invalid number for unary minus",
@@ -152,8 +157,8 @@ func (i Interpreter) VisitUnaryExpr(expr ast.UnaryExpr[any]) (any, error) {
 		}
 		return -parsedValue, nil
 	case token.BANG:
-		parsedValue, conv := rightValue.(bool)
-		if !conv {
+		parsedValue, ok := rightValue.(bool)
+		if !ok {
 			return rightValue, &RuntimeError{
 				Token:   expr.Operator,
 				Message: "Invalid boolean for unary bang",
