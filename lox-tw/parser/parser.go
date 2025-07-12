@@ -32,9 +32,66 @@ import (
 	"lox-tw/token"
 )
 
+func ParseTokensToStmts(tokens []token.Token) ([]ast.Stmt[string], error) {
+	var statements []ast.Stmt[string]
+	pos := 0
+
+	for tokens[pos].Type != token.EOF {
+		stmt, end, err := parseStatement(tokens, pos)
+		if err != nil {
+			return nil, err
+		}
+
+		statements = append(statements, stmt)
+		pos = end
+	}
+
+	return statements, nil
+}
+
 func ParseTokens(tokens []token.Token) (ast.Expr[string], error) {
 	expr, _, err := parseExpression(tokens, 0)
 	return expr, err
+}
+
+func parseStatement(tokens []token.Token, start int) (ast.Stmt[string], int, error) {
+	if tokens[start].Type == token.PRINT {
+		return parsePrintStatement(tokens, start+1)
+	}
+
+	return parseExpressionStatement(tokens, start)
+}
+
+func parsePrintStatement(tokens []token.Token, start int) (ast.Stmt[string], int, error) {
+	value, end, err := parseExpression(tokens, start)
+	if err != nil {
+		return nil, end, err
+	}
+
+	if tokens[end].Type != token.SEMICOLON {
+		return nil, end, &ParserError{
+			Token:   tokens[end],
+			Message: "Expected ';' after expression",
+		}
+	}
+
+	return ast.Print[string]{Expression: value}, end + 1, nil
+}
+
+func parseExpressionStatement(tokens []token.Token, start int) (ast.Stmt[string], int, error) {
+	expr, end, err := parseExpression(tokens, start)
+	if err != nil {
+		return nil, end, err
+	}
+
+	if tokens[end].Type != token.SEMICOLON {
+		return nil, end, &ParserError{
+			Token:   tokens[end],
+			Message: "Expected ';' after expression",
+		}
+	}
+
+	return ast.Expression[string]{Expression: expr}, end + 1, nil
 }
 
 func parseExpression(tokens []token.Token, start int) (ast.Expr[string], int, error) {

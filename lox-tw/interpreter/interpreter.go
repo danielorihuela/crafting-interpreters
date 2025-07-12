@@ -10,6 +10,22 @@ import (
 
 type Interpreter struct{}
 
+func (i Interpreter) VisitExpression(stmt ast.Expression[string]) error {
+	_, err := stmt.Expression.Accept(i)
+	return err
+}
+
+func (i Interpreter) VisitPrint(stmt ast.Print[string]) error {
+	value, err := stmt.Expression.Accept(i)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println(value)
+
+	return nil
+}
+
 func (i Interpreter) VisitGroupingExpr(expr ast.GroupingExpr[string]) (string, error) {
 	return expr.Expression.Accept(i)
 }

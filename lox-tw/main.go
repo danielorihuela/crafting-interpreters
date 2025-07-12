@@ -84,17 +84,18 @@ func run(source string) error {
 		result, _ := expr.Accept(interpreter.Interpreter{})
 		fmt.Println(result)
 	} else {
-		expr, err := parser.ParseTokens(tokens)
+		stmts, err := parser.ParseTokensToStmts(tokens)
 		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error parsing tokens: %v\n", err)
 			return err
 		}
 
-		result, err := expr.Accept(interpreter.Interpreter{})
-		if err != nil {
-			return err
+		for _, stmt := range stmts {
+			err := stmt.Accept(interpreter.Interpreter{})
+			if err != nil {
+				return err
+			}
 		}
-
-		fmt.Println(result)
 	}
 
 	return nil
