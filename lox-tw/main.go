@@ -65,12 +65,6 @@ func runPrompt() {
 }
 
 func run(source string) error {
-	tokens, err := scanner.ScanTokens(source)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error scanning tokens: %v\n", err)
-		return err
-	}
-
 	chapter := os.Getenv("CHAPTER")
 	switch chapter {
 	case "4":
@@ -80,6 +74,12 @@ func run(source string) error {
 	case "7":
 		chapter_7_run(source)
 	default:
+		tokens, err := scanner.ScanTokens(source)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error scanning tokens: %v\n", err)
+			return err
+		}
+
 		stmts, err := parser.ParseTokensToStmts(tokens)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error parsing tokens: %v\n", err)
@@ -89,6 +89,7 @@ func run(source string) error {
 		for _, stmt := range stmts {
 			err := stmt.Accept(interpreter.Interpreter{})
 			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error interpreting statement: %v\n", err)
 				return err
 			}
 		}
@@ -115,7 +116,7 @@ func chapter_6_run(source string) {
 	}
 
 	expr, _ := parser.ParseTokens(tokens)
-	ast, _ := expr.Accept(ast.Printer{})
+	ast, _ := expr.Accept(ast.AnyPrinter{})
 	fmt.Println(ast)
 }
 
