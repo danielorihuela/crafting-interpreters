@@ -11,22 +11,22 @@ type Stmt[T any] interface {
 }
 
 type StmtVisitor[T any] interface {
-	VisitExpression(stmt Expression[T]) error
-	VisitPrint(stmt Print[T]) error
+	VisitExpressionStmt(stmt ExpressionStmt[T]) error
+	VisitPrintStmt(stmt PrintStmt[T]) error
 }
 
-type Expression[T any] struct {
+type ExpressionStmt[T any] struct {
 	Expression Expr[T]
 }
 
-func (g Expression[T]) Accept(visitor StmtVisitor[T]) error {
-	return visitor.VisitExpression(g)
+func (g ExpressionStmt[T]) Accept(visitor StmtVisitor[T]) error {
+	return visitor.VisitExpressionStmt(g)
 }
 
-type Print[T any] struct {
+type PrintStmt[T any] struct {
 	Expression Expr[T]
 }
 
-func (t Print[T]) Accept(visitor StmtVisitor[T]) error {
-	return visitor.VisitPrint(t)
+func (t PrintStmt[T]) Accept(visitor StmtVisitor[T]) error {
+	return visitor.VisitPrintStmt(t)
 }

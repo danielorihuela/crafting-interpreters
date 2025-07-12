@@ -75,7 +75,7 @@ func parsePrintStatement(tokens []token.Token, start int) (ast.Stmt[string], int
 		}
 	}
 
-	return ast.Print[string]{Expression: value}, end + 1, nil
+	return ast.PrintStmt[string]{Expression: value}, end + 1, nil
 }
 
 func parseExpressionStatement(tokens []token.Token, start int) (ast.Stmt[string], int, error) {
@@ -91,7 +91,7 @@ func parseExpressionStatement(tokens []token.Token, start int) (ast.Stmt[string]
 		}
 	}
 
-	return ast.Expression[string]{Expression: expr}, end + 1, nil
+	return ast.ExpressionStmt[string]{Expression: expr}, end + 1, nil
 }
 
 func parseExpression(tokens []token.Token, start int) (ast.Expr[string], int, error) {

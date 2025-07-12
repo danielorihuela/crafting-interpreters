@@ -10,12 +10,12 @@ import (
 
 type Interpreter struct{}
 
-func (i Interpreter) VisitExpression(stmt ast.Expression[string]) error {
+func (i Interpreter) VisitExpressionStmt(stmt ast.ExpressionStmt[string]) error {
 	_, err := stmt.Expression.Accept(i)
 	return err
 }
 
-func (i Interpreter) VisitPrint(stmt ast.Print[string]) error {
+func (i Interpreter) VisitPrintStmt(stmt ast.PrintStmt[string]) error {
 	value, err := stmt.Expression.Accept(i)
 	if err != nil {
 		return err
