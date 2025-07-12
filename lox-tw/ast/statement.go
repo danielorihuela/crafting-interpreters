@@ -19,14 +19,14 @@ type ExpressionStmt[T any] struct {
 	Expression Expr[T]
 }
 
-func (g ExpressionStmt[T]) Accept(visitor StmtVisitor[T]) error {
-	return visitor.VisitExpressionStmt(g)
+func (e ExpressionStmt[T]) Accept(visitor StmtVisitor[T]) error {
+	return visitor.VisitExpressionStmt(e)
 }
 
 type PrintStmt[T any] struct {
 	Expression Expr[T]
 }
 
-func (t PrintStmt[T]) Accept(visitor StmtVisitor[T]) error {
-	return visitor.VisitPrintStmt(t)
+func (e PrintStmt[T]) Accept(visitor StmtVisitor[T]) error {
+	return visitor.VisitPrintStmt(e)
 }
