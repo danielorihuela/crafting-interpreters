@@ -38,7 +38,7 @@ func TestRpnPrinter(t *testing.T) {
 		},
 	}
 
-	expected := "((- 123) (group 45.67) *)"
+	expected := "((123 -) (group 45.67) *)"
 
 	result, _ := expression.Accept(RpnPrinter{})
 	if result != expected {
