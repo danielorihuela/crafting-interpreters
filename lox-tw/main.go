@@ -71,19 +71,15 @@ func run(source string) error {
 		return err
 	}
 
-	if os.Getenv("CHAPTER_04") == "1" {
-		for _, token := range tokens {
-			fmt.Println(token.String())
-		}
-	} else if os.Getenv("CHAPTER_06") == "1" {
-		expr, _ := parser.ParseTokens(tokens)
-		ast, _ := expr.Accept(ast.Printer{})
-		fmt.Println(ast)
-	} else if os.Getenv("CHAPTER_07") == "1" {
-		expr, _ := parser.ParseTokens(tokens)
-		result, _ := expr.Accept(interpreter.Interpreter{})
-		fmt.Println(result)
-	} else {
+	chapter := os.Getenv("CHAPTER")
+	switch chapter {
+	case "4":
+		chapter_4_run(source)
+	case "6":
+		chapter_6_run(source)
+	case "7":
+		chapter_7_run(source)
+	default:
 		stmts, err := parser.ParseTokensToStmts(tokens)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error parsing tokens: %v\n", err)
@@ -99,4 +95,37 @@ func run(source string) error {
 	}
 
 	return nil
+}
+
+func chapter_4_run(source string) {
+	tokens, err := scanner.ScanTokens(source)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error scanning tokens: %v\n", err)
+	}
+
+	for _, token := range tokens {
+		fmt.Println(token.String())
+	}
+}
+
+func chapter_6_run(source string) {
+	tokens, err := scanner.ScanTokens(source)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error scanning tokens: %v\n", err)
+	}
+
+	expr, _ := parser.ParseTokens(tokens)
+	ast, _ := expr.Accept(ast.Printer{})
+	fmt.Println(ast)
+}
+
+func chapter_7_run(source string) {
+	tokens, err := scanner.ScanTokens(source)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error scanning tokens: %v\n", err)
+	}
+
+	expr, _ := parser.ParseTokens(tokens)
+	result, _ := expr.Accept(interpreter.Interpreter{})
+	fmt.Println(result)
 }

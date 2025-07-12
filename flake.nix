@@ -40,9 +40,9 @@
           (cd craftinginterpreters/tool; $dart pub get > /dev/null)
 
           cd craftinginterpreters
-          CHAPTER_04=1 $dart tool/bin/test.dart chap04_scanning --interpreter ../lox-tw/lox-tw
-          CHAPTER_06=1 $dart tool/bin/test.dart chap06_parsing --interpreter ../lox-tw/lox-tw
-          CHAPTER_07=1 $dart tool/bin/test.dart chap07_evaluating --interpreter ../lox-tw/lox-tw
+          CHAPTER=4 $dart tool/bin/test.dart chap04_scanning --interpreter ../lox-tw/lox-tw
+          CHAPTER=6 $dart tool/bin/test.dart chap06_parsing --interpreter ../lox-tw/lox-tw
+          CHAPTER=7 $dart tool/bin/test.dart chap07_evaluating --interpreter ../lox-tw/lox-tw
           cd ..
 
           (cd lox-tw; $go clean)
