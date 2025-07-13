@@ -1,26 +1,3 @@
-/*
-grammar without ambiguity
-expression     → equality ;
-equality       → comparison ( ( "!=" | "==" ) comparison )* ;
-comparison     → term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
-term           → factor ( ( "-" | "+" ) factor )* ;
-factor         → unary ( ( "/" | "*" ) unary )* ;
-unary          → ( "!" | "-" ) unary | primary ;
-primary        → NUMBER | STRING | "true" | "false" | "nil" | "(" expression ")" ;
-
-with comma operator
-expression     → comma ;
-comma          → equality ( "," equality )* ;
-
-with ternary operator
-expression     → ternary ;
-ternary        → equality "?" ternary ":" ternary ;
-
-with comma and ternary operator
-expression     → comma ;
-comma          → ternary ( "," ternary )* ;
-ternary        → equality ( "?" ternary ":" ternary )* ;
-*/
 package parser
 
 import (

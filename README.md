@@ -6,12 +6,37 @@ Tree-walker interpreter implementation of the Crafting Interpreters book.
 
 ```
 nix develop .#go
-cd lox-tw
-go run
+go run .
 ```
 
 ## Test suite
 
 ```
 nix run .#test
+```
+
+## Supported Grammar
+
+```
+program               → declaration* EOF
+
+# Declarations
+declaration           → variableDeclaration | statement
+variableDeclaration   → "var" IDENTIFIER ("=" expression )? ";"
+
+# Statements
+statement             → expressionStatement | printStatement
+expressionStatement   → expression ";"
+printStatement        → "print" expression ";"
+
+# Expressions
+expression            → comma
+comma                 → ternary ( "," ternary )*
+ternary               → equality "?" expression ":" expression
+equality              → comparison ( ( "!=" | "==" ) comparison )*
+comparison            → term ( ( ">" | ">=" | "<" | "<=" ) term )*
+term                  → factor ( ( "-" | "+" ) factor )*
+factor                → unary ( ( "/" | "*" ) unary )*
+unary                 → ( "!" | "-" ) unary | primary
+primary               → NUMBER | STRING | "true" | "false" | "nil" | "(" expression ")" | IDENTIFIER
 ```
