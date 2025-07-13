@@ -1,11 +1,3 @@
-/*
-expression     → literal | unary | binary | grouping ;
-literal        → NUMBER | STRING | "true" | "false" | "nil" ;
-grouping       → "(" expression ")" ;
-unary          → ( "-" | "!" ) expression ;
-binary         → expression operator expression ;
-operator       → "==" | "!=" | "<" | "<=" | ">" | ">=" | "+"  | "-"  | "*" | "/" ;
-*/
 package ast
 
 import "lox-tw/token"
@@ -21,7 +13,6 @@ type ExprVisitor[T any] interface {
 	VisitUnaryExpr(expr UnaryExpr[T]) (T, error)
 	VisitLiteralExpr(expr LiteralExpr[T]) (T, error)
 	VisitNothingExpr(expr NothingExpr[T]) (T, error)
-
 	VisitVarExpr(expr VarExpr[T]) (T, error)
 }
 
@@ -70,7 +61,8 @@ func (e LiteralExpr[T]) Accept(visitor ExprVisitor[T]) (T, error) {
 	return visitor.VisitLiteralExpr(e)
 }
 
-type NothingExpr[T any] struct{}
+type NothingExpr[T any] struct {
+}
 
 func (e NothingExpr[T]) Accept(visitor ExprVisitor[T]) (T, error) {
 	return visitor.VisitNothingExpr(e)

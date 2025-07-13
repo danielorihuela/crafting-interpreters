@@ -1,0 +1,26 @@
+package ast
+
+import "lox-tw/token"
+
+type {{ .BaseType }}[T any] interface {
+    Accept(visitor {{ .BaseType }}Visitor[T]) ({{ .ReturnType }})
+}
+
+type {{ .BaseType }}Visitor[T any] interface {
+{{- range .Expressions }}
+    Visit{{ .Name }}{{ $.BaseType }}({{ $.BaseType | ToLower }} {{ .Name }}{{ $.BaseType }}[T]) ({{ $.ReturnType }})
+{{- end }}
+}
+
+{{- range .Expressions }}
+
+type {{ .Name }}{{ $.BaseType }}[T any] struct {
+{{- range .Fields }}
+    {{ .Name }} {{ .Type }}
+{{- end }}
+}
+
+func (e {{ .Name }}{{ $.BaseType }}[T]) Accept(visitor {{ $.BaseType }}Visitor[T]) ({{ $.ReturnType }}) {
+    return visitor.Visit{{ .Name }}{{ $.BaseType }}(e)
+}
+{{- end }}

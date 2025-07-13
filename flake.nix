@@ -25,6 +25,8 @@
               export PATH=$GOBIN:$PATH
 
               cd lox-tw
+              go run ./gen/expr/generate.go
+              go run ./gen/stmt/generate.go
             '';
           };
         };
@@ -36,7 +38,7 @@
 
           $git submodule init
           $git submodule update
-          (cd lox-tw; $go build; $go test -v ./...)
+          (cd lox-tw; $go run ./gen/expr/generate.go; $go run ./gen/stmt/generate.go; $go build; $go test -v ./...)
           (cd craftinginterpreters/tool; $dart pub get > /dev/null)
 
           cd craftinginterpreters
