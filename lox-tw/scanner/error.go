@@ -9,5 +9,5 @@ type ScannerError struct {
 }
 
 func (e *ScannerError) Error() string {
-	return fmt.Sprintf("[line %d] Scanner error %s: %s", e.Line, e.Where, e.Message)
+	return fmt.Sprintf("[line %d] Error: %s", e.Line, e.Message)
 }

@@ -12,5 +12,5 @@ type RuntimeError struct {
 }
 
 func (e *RuntimeError) Error() string {
-	return fmt.Sprintf("Runtime error at '%s': %s", e.Token.Lexeme, e.Message)
+	return fmt.Sprintf("%s\n[line %d]", e.Message, e.Token.Line)
 }

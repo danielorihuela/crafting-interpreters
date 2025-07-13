@@ -133,7 +133,7 @@ func scanString(source string, start uint, line uint) (token.Token, error) {
 		return token.NilToken(position, line), &ScannerError{
 			Line:    line,
 			Where:   "",
-			Message: "Unterminated string",
+			Message: "Unterminated string.",
 		}
 	}
 

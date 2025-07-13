@@ -32,7 +32,8 @@ func (env *Environment) Get(name token.Token) (any, error) {
 		}
 
 		return nil, &RuntimeError{
-			Message: "Undefined variable '" + name.Lexeme + "'",
+			Token:   name,
+			Message: "Undefined variable '" + name.Lexeme + "'.",
 		}
 	}
 
@@ -48,7 +49,8 @@ func (env *Environment) Assign(name token.Token, value any) error {
 		}
 
 		return &RuntimeError{
-			Message: "Undefined variable '" + name.Lexeme + "'",
+			Token:   name,
+			Message: "Undefined variable '" + name.Lexeme + "'.",
 		}
 	}
 

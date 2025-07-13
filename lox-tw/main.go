@@ -12,6 +12,8 @@ import (
 	"lox-tw/scanner"
 )
 
+var RUNTIME_ERROR = false
+
 func main() {
 	arguments := os.Args[1:]
 
@@ -38,7 +40,9 @@ func runFile(path string) {
 		os.Exit(65)
 	case *parser.ParserError:
 		os.Exit(65)
-	case *interpreter.RuntimeError:
+	}
+
+	if RUNTIME_ERROR {
 		os.Exit(70)
 	}
 }
@@ -73,27 +77,10 @@ func run(source string) error {
 		chapter_6_run(source)
 	case "7":
 		chapter_7_run(source)
+	case "8":
+		return chapter_8_run(source)
 	default:
-		tokens, err := scanner.ScanTokens(source)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error scanning tokens: %v\n", err)
-			return err
-		}
-
-		stmts, err := parser.ParseTokensToStmts(tokens)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error parsing tokens: %v\n", err)
-			return err
-		}
-
-		interpreter := interpreter.NewInterpreter()
-		for _, stmt := range stmts {
-			err := stmt.Accept(interpreter)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error interpreting statement: %v\n", err)
-				return err
-			}
-		}
+		return chapter_8_run(source)
 	}
 
 	return nil
@@ -130,4 +117,29 @@ func chapter_7_run(source string) {
 	expr, _ := parser.ParseTokens(tokens)
 	result, _ := expr.Accept(interpreter.Interpreter{})
 	fmt.Println(result)
+}
+
+func chapter_8_run(source string) error {
+	tokens, err := scanner.ScanTokens(source)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		return err
+	}
+
+	stmts, err := parser.ParseTokensToStmts(tokens)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		return err
+	}
+
+	interpreter := interpreter.NewInterpreter()
+	for _, stmt := range stmts {
+		err := stmt.Accept(interpreter)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			RUNTIME_ERROR = true
+		}
+	}
+
+	return nil
 }

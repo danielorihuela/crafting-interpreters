@@ -51,7 +51,7 @@ func parseVarDeclaration(tokens []token.Token, start int) (ast.Stmt[any], int, e
 	if tokens[start].Type != token.IDENTIFIER {
 		return nil, start, &ParserError{
 			Token:   tokens[start],
-			Message: "Expected variable name",
+			Message: "Expect variable name.",
 		}
 	}
 
@@ -69,7 +69,7 @@ func parseVarDeclaration(tokens []token.Token, start int) (ast.Stmt[any], int, e
 	if tokens[end].Type != token.SEMICOLON {
 		return nil, start, &ParserError{
 			Token:   tokens[start],
-			Message: "Expected ';' after variable declaration",
+			Message: "Expected ';' after variable declaration.",
 		}
 	}
 
@@ -95,7 +95,7 @@ func parsePrintStatement(tokens []token.Token, start int) (ast.Stmt[any], int, e
 	if tokens[end].Type != token.SEMICOLON {
 		return nil, end, &ParserError{
 			Token:   tokens[end],
-			Message: "Expected ';' after expression",
+			Message: "Expected ';' after expression.",
 		}
 	}
 
@@ -119,7 +119,7 @@ func parseBlockStatement(tokens []token.Token, start int) (ast.Stmt[any], int, e
 	if tokens[pos].Type != token.RIGHT_BRACE {
 		return nil, pos, &ParserError{
 			Token:   tokens[pos],
-			Message: "Expected '}' to close block",
+			Message: "Expected '}' to close block.",
 		}
 	}
 
@@ -135,7 +135,7 @@ func parseExpressionStatement(tokens []token.Token, start int) (ast.Stmt[any], i
 	if tokens[end].Type != token.SEMICOLON {
 		return nil, end, &ParserError{
 			Token:   tokens[end],
-			Message: "Expected ';' after expression",
+			Message: "Expected ';' after expression.",
 		}
 	}
 
@@ -152,7 +152,8 @@ func parseAssign(tokens []token.Token, start int) (ast.Expr[any], int, error) {
 		return comma, end, err
 	}
 
-	if tokens[end].Type == token.EQUAL {
+	endCommaToken := tokens[end]
+	if endCommaToken.Type == token.EQUAL {
 		assign, end, err := parseAssign(tokens, end+1)
 		if err != nil {
 			return assign, end, err
@@ -161,8 +162,8 @@ func parseAssign(tokens []token.Token, start int) (ast.Expr[any], int, error) {
 		v, ok := comma.(ast.VarExpr[any])
 		if !ok {
 			return comma, end, &ParserError{
-				Token:   tokens[end],
-				Message: "Invalid assignment target",
+				Token:   endCommaToken,
+				Message: "Invalid assignment target.",
 			}
 		}
 
@@ -218,7 +219,7 @@ func parseTernary(tokens []token.Token, start int) (ast.Expr[any], int, error) {
 		if tokens[trueEnd].Type != token.COLON {
 			return trueExpr, trueEnd, &ParserError{
 				Token:   tokens[trueEnd],
-				Message: "Expected ':' after true branch of ternary expression",
+				Message: "Expected ':' after true branch of ternary expression.",
 			}
 		}
 
@@ -367,7 +368,7 @@ func parsePrimary(tokens []token.Token, start int) (ast.Expr[any], int, error) {
 		if tokens[end].Type != token.RIGHT_PAREN {
 			return expr, end, &ParserError{
 				Token:   tokens[end],
-				Message: "Expected ')' after expression",
+				Message: "Expected ')' after expression.",
 			}
 		}
 
@@ -377,7 +378,7 @@ func parsePrimary(tokens []token.Token, start int) (ast.Expr[any], int, error) {
 	default:
 		return ast.LiteralExpr[any]{Value: tokens[start].Literal}, start, &ParserError{
 			Token:   tokens[start],
-			Message: "Expected expression",
+			Message: "Expect expression.",
 		}
 	}
 }

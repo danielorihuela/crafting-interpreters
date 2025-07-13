@@ -3,7 +3,6 @@ package interpreter
 import (
 	"fmt"
 	"strconv"
-	"strings"
 
 	"lox-tw/ast"
 	"lox-tw/token"
@@ -25,7 +24,11 @@ func (i Interpreter) VisitAssignExpr(expr ast.AssignExpr[any]) (any, error) {
 		return nil, err
 	}
 
-	i.environment.Assign(expr.Name, value)
+	err = i.environment.Assign(expr.Name, value)
+	if err != nil {
+		return nil, err
+	}
+
 	return value, nil
 }
 
@@ -63,9 +66,6 @@ func (i Interpreter) VisitPrintStmt(stmt ast.PrintStmt[any]) error {
 		fmt.Println("nil")
 	case float64:
 		finalValue := strconv.FormatFloat(v, 'f', -1, 64)
-		if !strings.Contains(finalValue, ".") {
-			finalValue = finalValue + ".0"
-		}
 		fmt.Println(finalValue)
 	default:
 		fmt.Println(v)
@@ -124,12 +124,14 @@ func (i Interpreter) VisitBinaryExpr(expr ast.BinaryExpr[any]) (any, error) {
 
 		return nil, &RuntimeError{
 			Token:   expr.Operator,
-			Message: "Operands must be either both numbers or both strings for addition",
+			Message: "Operands must be two numbers or two strings.",
 		}
-	case token.MINUS, token.SLASH, token.STAR,
-		token.GREATER, token.GREATER_EQUAL, token.LESS, token.LESS_EQUAL,
-		token.BANG_EQUAL, token.EQUAL_EQUAL:
+	case token.MINUS, token.SLASH, token.STAR, token.GREATER, token.GREATER_EQUAL, token.LESS, token.LESS_EQUAL:
 		return computeOpFloats(leftValue, rightValue, expr.Operator)
+	case token.BANG_EQUAL:
+		return leftValue != rightValue, nil
+	case token.EQUAL_EQUAL:
+		return leftValue == rightValue, nil
 	}
 
 	return nil, nil
@@ -140,7 +142,7 @@ func computeOpFloats(leftValue, rightValue any, operator token.Token) (any, erro
 	if !ok {
 		return leftValue, &RuntimeError{
 			Token:   operator,
-			Message: "Invalid left operand for " + operator.Lexeme,
+			Message: "Operands must be numbers.",
 		}
 	}
 
@@ -148,7 +150,7 @@ func computeOpFloats(leftValue, rightValue any, operator token.Token) (any, erro
 	if !ok {
 		return rightValue, &RuntimeError{
 			Token:   operator,
-			Message: "Invalid right operand for " + operator.Lexeme,
+			Message: "Operands must be numbers.",
 		}
 	}
 
@@ -188,7 +190,7 @@ func (i Interpreter) VisitUnaryExpr(expr ast.UnaryExpr[any]) (any, error) {
 		if !ok {
 			return rightValue, &RuntimeError{
 				Token:   expr.Operator,
-				Message: "Invalid number for unary minus",
+				Message: "Operand must be a number.",
 			}
 		}
 		return -parsedValue, nil
@@ -216,15 +218,12 @@ func (i Interpreter) VisitNothingExpr(expr ast.NothingExpr[any]) (any, error) {
 
 func (i Interpreter) VisitBlockStmt(stmt ast.BlockStmt[any]) error {
 	previousEnv := i.environment
-	newEnv := NewEnvironment().WithParent(i.environment)
-	i.environment = newEnv
+	i.environment = NewEnvironment().WithParent(previousEnv)
 
+	var err error = nil
 	for _, statement := range stmt.Statements {
-		err := statement.Accept(i)
-		if err != nil {
-			i.environment = previousEnv
-		}
+		err = statement.Accept(i)
 	}
 
-	return nil
+	return err
 }
