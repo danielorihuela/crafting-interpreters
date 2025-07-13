@@ -5,7 +5,6 @@ import (
 	"os"
 
 	"lox-tw/ast"
-	"lox-tw/features"
 	"lox-tw/token"
 )
 
@@ -118,39 +117,21 @@ func parseExpressionStatement(tokens []token.Token, start int) (ast.Stmt[any], i
 }
 
 func parseExpression(tokens []token.Token, start int) (ast.Expr[any], int, error) {
-	if features.COMMA_OPERATOR && features.TERNARY_OPERATOR {
-		return parseComma(tokens, start)
-	} else if features.COMMA_OPERATOR {
-		return parseComma(tokens, start)
-	} else if features.TERNARY_OPERATOR {
-		return parseTernary(tokens, start)
-	}
-
-	return parseEquality(tokens, start)
+	return parseComma(tokens, start)
 }
 
 func parseComma(tokens []token.Token, start int) (ast.Expr[any], int, error) {
 	var end int
-	if features.BINARY_OPERATOR_ERROR_PRODUCTION {
-		if tokens[start].Type == token.COMMA {
-			fmt.Fprintf(os.Stderr, "Error: Unexpected '%s' at the start of comma\n", tokens[start].Lexeme)
-			if features.TERNARY_OPERATOR {
-				_, end, _ = parseTernary(tokens, start)
-			} else {
-				_, end, _ = parseEquality(tokens, start)
-			}
-			return ast.NothingExpr[any]{}, end, nil
-		}
+	if tokens[start].Type == token.COMMA {
+		fmt.Fprintf(os.Stderr, "Error: Unexpected '%s' at the start of comma\n", tokens[start].Lexeme)
+		_, end, _ = parseTernary(tokens, start)
+		return ast.NothingExpr[any]{}, end, nil
 	}
 
 	var expr ast.Expr[any]
 	var err error
 
-	if features.TERNARY_OPERATOR {
-		expr, end, err = parseTernary(tokens, start)
-	} else {
-		expr, end, err = parseEquality(tokens, start)
-	}
+	expr, end, err = parseTernary(tokens, start)
 	if err != nil {
 		return expr, end, err
 	}
@@ -158,11 +139,7 @@ func parseComma(tokens []token.Token, start int) (ast.Expr[any], int, error) {
 	for tokens[end].Type == token.COMMA {
 		var rightExpr ast.Expr[any]
 		var rightEnd int
-		if features.TERNARY_OPERATOR {
-			rightExpr, rightEnd, err = parseTernary(tokens, end+1)
-		} else {
-			rightExpr, rightEnd, err = parseEquality(tokens, end+1)
-		}
+		rightExpr, rightEnd, err = parseTernary(tokens, end+1)
 		if err != nil {
 			return rightExpr, rightEnd, err
 		}
@@ -206,12 +183,10 @@ func parseTernary(tokens []token.Token, start int) (ast.Expr[any], int, error) {
 }
 
 func parseEquality(tokens []token.Token, start int) (ast.Expr[any], int, error) {
-	if features.BINARY_OPERATOR_ERROR_PRODUCTION {
-		if tokens[start].Type == token.EQUAL_EQUAL || tokens[start].Type == token.BANG_EQUAL {
-			fmt.Fprintf(os.Stderr, "Error: Unexpected '%s' at the start of equality\n", tokens[start].Lexeme)
-			_, end, _ := parseComparison(tokens, start+1)
-			return ast.NothingExpr[any]{}, end, nil
-		}
+	if tokens[start].Type == token.EQUAL_EQUAL || tokens[start].Type == token.BANG_EQUAL {
+		fmt.Fprintf(os.Stderr, "Error: Unexpected '%s' at the start of equality\n", tokens[start].Lexeme)
+		_, end, _ := parseComparison(tokens, start+1)
+		return ast.NothingExpr[any]{}, end, nil
 	}
 
 	expr, end, err := parseComparison(tokens, start)
@@ -233,13 +208,11 @@ func parseEquality(tokens []token.Token, start int) (ast.Expr[any], int, error) 
 }
 
 func parseComparison(tokens []token.Token, start int) (ast.Expr[any], int, error) {
-	if features.BINARY_OPERATOR_ERROR_PRODUCTION {
-		if tokens[start].Type == token.LESS || tokens[start].Type == token.LESS_EQUAL ||
-			tokens[start].Type == token.GREATER || tokens[start].Type == token.GREATER_EQUAL {
-			fmt.Fprintf(os.Stderr, "Error: Unexpected '%s' at the start of comparison\n", tokens[start].Lexeme)
-			_, end, _ := parseTerm(tokens, start+1)
-			return ast.NothingExpr[any]{}, end, nil
-		}
+	if tokens[start].Type == token.LESS || tokens[start].Type == token.LESS_EQUAL ||
+		tokens[start].Type == token.GREATER || tokens[start].Type == token.GREATER_EQUAL {
+		fmt.Fprintf(os.Stderr, "Error: Unexpected '%s' at the start of comparison\n", tokens[start].Lexeme)
+		_, end, _ := parseTerm(tokens, start+1)
+		return ast.NothingExpr[any]{}, end, nil
 	}
 
 	expr, end, err := parseTerm(tokens, start)
@@ -262,12 +235,10 @@ func parseComparison(tokens []token.Token, start int) (ast.Expr[any], int, error
 }
 
 func parseTerm(tokens []token.Token, start int) (ast.Expr[any], int, error) {
-	if features.BINARY_OPERATOR_ERROR_PRODUCTION {
-		if tokens[start].Type == token.PLUS {
-			fmt.Fprintf(os.Stderr, "Error: Unexpected '%s' at the start of term\n", tokens[start].Lexeme)
-			_, end, _ := parseFactor(tokens, start+1)
-			return ast.NothingExpr[any]{}, end, nil
-		}
+	if tokens[start].Type == token.PLUS {
+		fmt.Fprintf(os.Stderr, "Error: Unexpected '%s' at the start of term\n", tokens[start].Lexeme)
+		_, end, _ := parseFactor(tokens, start+1)
+		return ast.NothingExpr[any]{}, end, nil
 	}
 
 	expr, end, err := parseFactor(tokens, start)
@@ -289,12 +260,10 @@ func parseTerm(tokens []token.Token, start int) (ast.Expr[any], int, error) {
 }
 
 func parseFactor(tokens []token.Token, start int) (ast.Expr[any], int, error) {
-	if features.BINARY_OPERATOR_ERROR_PRODUCTION {
-		if tokens[start].Type == token.STAR || tokens[start].Type == token.SLASH {
-			fmt.Fprintf(os.Stderr, "Error: Unexpected '%s' at the start of factor\n", tokens[start].Lexeme)
-			_, end, _ := parseUnary(tokens, start+1)
-			return ast.NothingExpr[any]{}, end, nil
-		}
+	if tokens[start].Type == token.STAR || tokens[start].Type == token.SLASH {
+		fmt.Fprintf(os.Stderr, "Error: Unexpected '%s' at the start of factor\n", tokens[start].Lexeme)
+		_, end, _ := parseUnary(tokens, start+1)
+		return ast.NothingExpr[any]{}, end, nil
 	}
 
 	expr, end, err := parseUnary(tokens, start)

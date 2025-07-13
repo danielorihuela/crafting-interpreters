@@ -1,7 +1,6 @@
 package scanner
 
 import (
-	"lox-tw/features"
 	"lox-tw/token"
 )
 
@@ -38,10 +37,8 @@ func scanToken(source string, start uint, line uint) (token.Token, error) {
 		return scanSingleLineComment(source, position, line)
 	}
 
-	if features.MULTILINE_COMMENTS {
-		if isMultiLineCommentStart(currentCharacter, nextCharacter) {
-			return scanMultiLineComment(source, position, line)
-		}
+	if isMultiLineCommentStart(currentCharacter, nextCharacter) {
+		return scanMultiLineComment(source, position, line)
 	}
 
 	tokenType := token.TrySingleCharTokenType(currentCharacter)
