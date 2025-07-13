@@ -25,9 +25,10 @@ declaration           → variableDeclaration | statement
 variableDeclaration   → "var" IDENTIFIER ("=" expression )? ";"
 
 # Statements
-statement             → expressionStatement | printStatement
+statement             → expressionStatement | printStatement | blockStatement
 expressionStatement   → expression ";"
 printStatement        → "print" expression ";"
+blockStatement        → "{" declaration* "}"
 
 # Expressions
 expression            → comma

@@ -10,6 +10,7 @@ type StmtVisitor[T any] interface {
 	VisitVarStmt(stmt VarStmt[T]) error
 	VisitExpressionStmt(stmt ExpressionStmt[T]) error
 	VisitPrintStmt(stmt PrintStmt[T]) error
+	VisitBlockStmt(stmt BlockStmt[T]) error
 }
 
 type VarStmt[T any] struct {
@@ -35,4 +36,12 @@ type PrintStmt[T any] struct {
 
 func (e PrintStmt[T]) Accept(visitor StmtVisitor[T]) error {
 	return visitor.VisitPrintStmt(e)
+}
+
+type BlockStmt[T any] struct {
+	Statements []Stmt[T]
+}
+
+func (e BlockStmt[T]) Accept(visitor StmtVisitor[T]) error {
+	return visitor.VisitBlockStmt(e)
 }

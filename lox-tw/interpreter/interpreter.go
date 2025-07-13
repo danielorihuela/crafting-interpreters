@@ -44,7 +44,7 @@ func (i Interpreter) VisitVarStmt(stmt ast.VarStmt[any]) error {
 }
 
 func (i Interpreter) VisitVarExpr(expr ast.VarExpr[any]) (any, error) {
-	return i.environment.Get(expr.Name.Lexeme)
+	return i.environment.Get(expr.Name)
 }
 
 func (i Interpreter) VisitExpressionStmt(stmt ast.ExpressionStmt[any]) error {
@@ -212,4 +212,19 @@ func (i Interpreter) VisitLiteralExpr(expr ast.LiteralExpr[any]) (any, error) {
 
 func (i Interpreter) VisitNothingExpr(expr ast.NothingExpr[any]) (any, error) {
 	return nil, nil
+}
+
+func (i Interpreter) VisitBlockStmt(stmt ast.BlockStmt[any]) error {
+	previousEnv := i.environment
+	newEnv := NewEnvironment().WithParent(i.environment)
+	i.environment = newEnv
+
+	for _, statement := range stmt.Statements {
+		err := statement.Accept(i)
+		if err != nil {
+			i.environment = previousEnv
+		}
+	}
+
+	return nil
 }

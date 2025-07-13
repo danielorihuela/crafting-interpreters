@@ -32,6 +32,7 @@ func main() {
 			{"Var", []Field{{"Name", "token.Token"}, {"Initializer", "Expr[T]"}}},
 			{"Expression", []Field{{"Expression", "Expr[T]"}}},
 			{"Print", []Field{{"Expression", "Expr[T]"}}},
+			{"Block", []Field{{"Statements", "[]Stmt[T]"}}},
 		},
 	}
 
