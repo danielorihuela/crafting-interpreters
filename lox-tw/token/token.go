@@ -15,61 +15,20 @@ type Token struct {
 	Line     uint
 }
 
-func NilToken(position, line uint) Token {
+func NilToken(pos, line uint) Token {
 	return Token{
 		Type:     NOTHING,
 		Lexeme:   "",
-		Literal:  nil,
-		Line:     line,
-		Position: position,
-	}
-}
-
-func EofToken(position, line uint) Token {
-	return Token{
-		Type:     EOF,
-		Lexeme:   "",
-		Literal:  nil,
-		Line:     line,
-		Position: position,
-	}
-}
-
-func StringToken(lexeme string, position, line uint) Token {
-	return Token{
-		Type:     STRING,
-		Lexeme:   lexeme,
-		Literal:  lexeme[1 : len(lexeme)-1], // Remove quotes
-		Line:     line,
-		Position: position,
-	}
-}
-
-func NumberToken(lexeme string, position, line uint) Token {
-	value, _ := strconv.ParseFloat(lexeme, 64)
-	return Token{
-		Type:     NUMBER,
-		Lexeme:   lexeme,
-		Literal:  value,
-		Line:     line,
-		Position: position,
-	}
-}
-
-func LeftParenToken(pos, line uint) Token {
-	return Token{
-		Type:     LEFT_PAREN,
-		Lexeme:   "(",
 		Literal:  nil,
 		Line:     line,
 		Position: pos,
 	}
 }
 
-func RightParenToken(pos, line uint) Token {
+func EofToken(pos, line uint) Token {
 	return Token{
-		Type:     RIGHT_PAREN,
-		Lexeme:   ")",
+		Type:     EOF,
+		Lexeme:   "",
 		Literal:  nil,
 		Line:     line,
 		Position: pos,
