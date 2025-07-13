@@ -86,8 +86,9 @@ func run(source string) error {
 			return err
 		}
 
+		interpreter := interpreter.NewInterpreter()
 		for _, stmt := range stmts {
-			err := stmt.Accept(interpreter.Interpreter{})
+			err := stmt.Accept(interpreter)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error interpreting statement: %v\n", err)
 				return err

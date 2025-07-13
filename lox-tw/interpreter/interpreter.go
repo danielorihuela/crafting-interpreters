@@ -9,7 +9,33 @@ import (
 	"lox-tw/token"
 )
 
-type Interpreter struct{}
+type Interpreter struct {
+	environment *Environment
+}
+
+func NewInterpreter() *Interpreter {
+	return &Interpreter{
+		environment: NewEnvironment(),
+	}
+}
+
+func (i Interpreter) VisitVarStmt(stmt ast.VarStmt[any]) error {
+	var value any = nil
+	if stmt.Initializer != nil {
+		var err error
+		value, err = stmt.Initializer.Accept(i)
+		if err != nil {
+			return err
+		}
+	}
+
+	i.environment.Define(stmt.Name.Lexeme, value)
+	return nil
+}
+
+func (i Interpreter) VisitVarExpr(expr ast.VarExpr[any]) (any, error) {
+	return i.environment.Get(expr.Name.Lexeme)
+}
 
 func (i Interpreter) VisitExpressionStmt(stmt ast.ExpressionStmt[any]) error {
 	_, err := stmt.Expression.Accept(i)

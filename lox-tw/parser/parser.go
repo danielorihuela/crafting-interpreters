@@ -37,7 +37,7 @@ func ParseTokensToStmts(tokens []token.Token) ([]ast.Stmt[any], error) {
 	pos := 0
 
 	for tokens[pos].Type != token.EOF {
-		stmt, end, err := parseStatement(tokens, pos)
+		stmt, end, err := parseDeclaration(tokens, pos)
 		if err != nil {
 			return nil, err
 		}
@@ -52,6 +52,52 @@ func ParseTokensToStmts(tokens []token.Token) ([]ast.Stmt[any], error) {
 func ParseTokens(tokens []token.Token) (ast.Expr[any], error) {
 	expr, _, err := parseExpression(tokens, 0)
 	return expr, err
+}
+
+func parseDeclaration(tokens []token.Token, start int) (ast.Stmt[any], int, error) {
+	var stmt ast.Stmt[any]
+	var end int
+	var err error
+	if tokens[start].Type == token.VAR {
+		stmt, end, err = parseVarDeclaration(tokens, start+1)
+	} else {
+		stmt, end, err = parseStatement(tokens, start)
+	}
+
+	if err != nil {
+		end = synchronize(tokens, end)
+	}
+
+	return stmt, end, err
+}
+
+func parseVarDeclaration(tokens []token.Token, start int) (ast.Stmt[any], int, error) {
+	if tokens[start].Type != token.IDENTIFIER {
+		return nil, start, &ParserError{
+			Token:   tokens[start],
+			Message: "Expected variable name",
+		}
+	}
+
+	varName := tokens[start]
+	var initializer ast.Expr[any] = ast.NothingExpr[any]{}
+	end := start + 1
+	var err error
+	if tokens[end].Type == token.EQUAL {
+		initializer, end, err = parseExpression(tokens, start+2)
+		if err != nil {
+			return nil, end, err
+		}
+	}
+
+	if tokens[end].Type != token.SEMICOLON {
+		return nil, start, &ParserError{
+			Token:   tokens[start],
+			Message: "Expected ';' after variable declaration",
+		}
+	}
+
+	return ast.VarStmt[any]{Name: varName, Initializer: initializer}, end + 1, nil
 }
 
 func parseStatement(tokens []token.Token, start int) (ast.Stmt[any], int, error) {
@@ -328,6 +374,8 @@ func parsePrimary(tokens []token.Token, start int) (ast.Expr[any], int, error) {
 		}
 
 		return ast.GroupingExpr[any]{Expression: expr}, end + 1, nil
+	case token.IDENTIFIER:
+		return ast.VarExpr[any]{Name: tokens[start]}, start + 1, nil
 	default:
 		return ast.LiteralExpr[any]{Value: tokens[start].Literal}, start, &ParserError{
 			Token:   tokens[start],
