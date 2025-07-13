@@ -117,7 +117,33 @@ func parseExpressionStatement(tokens []token.Token, start int) (ast.Stmt[any], i
 }
 
 func parseExpression(tokens []token.Token, start int) (ast.Expr[any], int, error) {
-	return parseComma(tokens, start)
+	return parseAssign(tokens, start)
+}
+
+func parseAssign(tokens []token.Token, start int) (ast.Expr[any], int, error) {
+	comma, end, err := parseComma(tokens, start)
+	if err != nil {
+		return comma, end, err
+	}
+
+	if tokens[end].Type == token.EQUAL {
+		assign, end, err := parseAssign(tokens, end+1)
+		if err != nil {
+			return assign, end, err
+		}
+
+		v, ok := comma.(ast.VarExpr[any])
+		if !ok {
+			return comma, end, &ParserError{
+				Token:   tokens[end],
+				Message: "Invalid assignment target",
+			}
+		}
+
+		return ast.AssignExpr[any]{Name: v.Name, Value: assign}, end, nil
+	}
+
+	return comma, end, nil
 }
 
 func parseComma(tokens []token.Token, start int) (ast.Expr[any], int, error) {

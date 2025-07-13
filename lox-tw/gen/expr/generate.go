@@ -35,7 +35,9 @@ func main() {
 			{"Unary", []Field{{"Operator", "token.Token"}, {"Right", "Expr[T]"}}},
 			{"Literal", []Field{{"Value", "any"}}},
 			{"Nothing", nil},
+
 			{"Var", []Field{{"Name", "token.Token"}}},
+			{"Assign", []Field{{"Name", "token.Token"}, {"Value", "Expr[T]"}}},
 		},
 	}
 

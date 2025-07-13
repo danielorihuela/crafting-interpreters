@@ -19,6 +19,16 @@ func NewInterpreter() *Interpreter {
 	}
 }
 
+func (i Interpreter) VisitAssignExpr(expr ast.AssignExpr[any]) (any, error) {
+	value, err := expr.Value.Accept(i)
+	if err != nil {
+		return nil, err
+	}
+
+	i.environment.Assign(expr.Name, value)
+	return value, nil
+}
+
 func (i Interpreter) VisitVarStmt(stmt ast.VarStmt[any]) error {
 	var value any = nil
 	if stmt.Initializer != nil {

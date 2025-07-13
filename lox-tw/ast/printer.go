@@ -53,3 +53,7 @@ func (p AnyPrinter) VisitNothingExpr(expr NothingExpr[any]) (any, error) {
 func (p AnyPrinter) VisitVarExpr(expr VarExpr[any]) (any, error) {
 	return fmt.Sprintf("(var %s)", expr.Name.Lexeme), nil
 }
+
+func (p AnyPrinter) VisitAssignExpr(expr AssignExpr[any]) (any, error) {
+	return fmt.Sprintf("(%s = %s)", expr.Name.Lexeme, expr.Value), nil
+}

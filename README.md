@@ -31,6 +31,7 @@ printStatement        → "print" expression ";"
 
 # Expressions
 expression            → comma
+assignment            → IDENTIFIER "=" assignment | comma
 comma                 → ternary ( "," ternary )*
 ternary               → equality "?" expression ":" expression
 equality              → comparison ( ( "!=" | "==" ) comparison )*
