@@ -2,6 +2,7 @@ package scanner
 
 import (
 	"lox-tw/token"
+	"strconv"
 )
 
 func ScanTokens(source string) ([]token.Token, error) {
@@ -72,9 +73,7 @@ func scanToken(source string, start uint, line uint) (token.Token, error) {
 	}
 
 	switch currentCharacter {
-	case ' ':
-	case '\r':
-	case '\t':
+	case ' ', '\r', '\t':
 		return token.NilToken(position+1, line), nil
 	case '\n':
 		return token.NilToken(position+1, line+1), nil
@@ -83,12 +82,9 @@ func scanToken(source string, start uint, line uint) (token.Token, error) {
 	default:
 		return token.NilToken(position, line), &ScannerError{
 			Line:    line,
-			Where:   "",
-			Message: "Unexpected character: " + string(source[position]),
+			Message: "Unexpected character: " + string(source[position]) + ".",
 		}
 	}
-
-	return token.NilToken(position+1, line), nil
 }
 
 func scanSingleLineComment(source string, start uint, line uint) (token.Token, error) {
@@ -115,8 +111,7 @@ func scanMultiLineComment(source string, start uint, line uint) (token.Token, er
 
 	return token.NilToken(position, line), &ScannerError{
 		Line:    line,
-		Where:   "",
-		Message: "Unterminated multi-line comment",
+		Message: "Unterminated multi-line comment.",
 	}
 }
 
@@ -132,13 +127,19 @@ func scanString(source string, start uint, line uint) (token.Token, error) {
 	if allCharactersParsed(source, position) {
 		return token.NilToken(position, line), &ScannerError{
 			Line:    line,
-			Where:   "",
 			Message: "Unterminated string.",
 		}
 	}
 
 	position += 1
-	return token.StringToken(source[start:position], position, line), nil
+	lexeme := source[start:position]
+	return token.Token{
+		Type:     token.STRING,
+		Lexeme:   lexeme,
+		Literal:  lexeme[1 : len(lexeme)-1], // Remove quotes
+		Line:     line,
+		Position: position,
+	}, nil
 }
 
 func scanDecimal(source string, start uint, line uint) token.Token {
@@ -158,7 +159,15 @@ func scanDecimal(source string, start uint, line uint) token.Token {
 		}
 	}
 
-	return token.NumberToken(source[start:position], position, line)
+	lexeme := source[start:position]
+	value, _ := strconv.ParseFloat(lexeme, 64)
+	return token.Token{
+		Type:     token.NUMBER,
+		Lexeme:   lexeme,
+		Literal:  value,
+		Line:     line,
+		Position: position,
+	}
 }
 
 func scanIdentifier(source string, start uint, line uint) token.Token {

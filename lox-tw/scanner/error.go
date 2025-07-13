@@ -4,7 +4,6 @@ import "fmt"
 
 type ScannerError struct {
 	Line    uint
-	Where   string
 	Message string
 }
 
