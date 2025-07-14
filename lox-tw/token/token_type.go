@@ -171,3 +171,16 @@ func TryKeywordTokenType(lexeme string) TokenType {
 		"while":  WHILE,
 	}[lexeme]
 }
+
+func (t TokenType) In(types ...TokenType) bool {
+	for _, typ := range types {
+		if t == typ {
+			return true
+		}
+	}
+	return false
+}
+
+func (t TokenType) NotIn(types ...TokenType) bool {
+	return !t.In(types...)
+}

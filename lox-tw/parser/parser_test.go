@@ -36,7 +36,7 @@ func TestParser(t *testing.T) {
 
 	for _, test := range tests {
 		tokens, _ := scanner.ScanTokens(test.input)
-		expr, _ := ParseTokens(tokens)
+		expr, _ := ParseTokensToExpression(tokens)
 		result, _ := expr.Accept(ast.AnyPrinter{})
 		if result != test.expected {
 			t.Errorf("Expected '%s', got '%s'", test.expected, result)

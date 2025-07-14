@@ -65,7 +65,7 @@ func TestExprEvaluation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tokens, _ := scanner.ScanTokens(tt.expr)
-			expr, _ := parser.ParseTokens(tokens)
+			expr, _ := parser.ParseTokensToExpression(tokens)
 			result, err := expr.Accept(Interpreter{})
 			if err != nil {
 				t.Errorf("Error evaluating expression: %v", err)

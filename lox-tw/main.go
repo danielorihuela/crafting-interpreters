@@ -103,7 +103,7 @@ func chapter_6_run(source string) {
 		fmt.Fprintf(os.Stderr, "Error scanning tokens: %v\n", err)
 	}
 
-	expr, _ := parser.ParseTokens(tokens)
+	expr, _ := parser.ParseTokensToExpression(tokens)
 	ast, _ := expr.Accept(ast.AnyPrinter{})
 	fmt.Println(ast)
 }
@@ -114,7 +114,7 @@ func chapter_7_run(source string) {
 		fmt.Fprintf(os.Stderr, "Error scanning tokens: %v\n", err)
 	}
 
-	expr, _ := parser.ParseTokens(tokens)
+	expr, _ := parser.ParseTokensToExpression(tokens)
 	result, _ := expr.Accept(interpreter.Interpreter{})
 	fmt.Println(result)
 }
