@@ -40,12 +40,12 @@ func parseComma(tokens []token.Token, start int) (ast.Expr[any], int, error) {
 }
 
 func parseTernary(tokens []token.Token, start int) (ast.Expr[any], int, error) {
-	conditionExpr, endEquality, err := parseEquality(tokens, start)
-	if err != nil || tokens[endEquality].Type != token.QUESTION_MARK {
-		return conditionExpr, endEquality, err
+	orExpr, endOr, err := parseOr(tokens, start)
+	if err != nil || tokens[endOr].Type != token.QUESTION_MARK {
+		return orExpr, endOr, err
 	}
 
-	trueExpr, endExpression, err := parseExpression(tokens, endEquality+1)
+	trueExpr, endExpression, err := parseExpression(tokens, endOr+1)
 	if err != nil {
 		return trueExpr, endExpression, err
 	}
@@ -62,7 +62,15 @@ func parseTernary(tokens []token.Token, start int) (ast.Expr[any], int, error) {
 		return falseExpr, endSecondExpression, err
 	}
 
-	return ast.TernaryExpr[any]{Condition: conditionExpr, TrueExpr: trueExpr, FalseExpr: falseExpr}, endSecondExpression, nil
+	return ast.TernaryExpr[any]{Condition: orExpr, TrueExpr: trueExpr, FalseExpr: falseExpr}, endSecondExpression, nil
+}
+
+func parseOr(tokens []token.Token, start int) (ast.Expr[any], int, error) {
+	return parseLeftAssociativeRule("or", parseAnd, tokens, start, []token.TokenType{token.OR})
+}
+
+func parseAnd(tokens []token.Token, start int) (ast.Expr[any], int, error) {
+	return parseLeftAssociativeRule("and", parseEquality, tokens, start, []token.TokenType{token.AND})
 }
 
 func parseEquality(tokens []token.Token, start int) (ast.Expr[any], int, error) {
@@ -155,7 +163,11 @@ func parseLeftAssociativeRule(
 			return rightExpr, rightEnd, err
 		}
 
-		leftExpr = ast.BinaryExpr[any]{Left: leftExpr, Operator: tokens[leftEnd], Right: rightExpr}
+		if operation == "or" || operation == "and" {
+			leftExpr = ast.LogicalExpr[any]{Left: leftExpr, Operator: tokens[leftEnd], Right: rightExpr}
+		} else {
+			leftExpr = ast.BinaryExpr[any]{Left: leftExpr, Operator: tokens[leftEnd], Right: rightExpr}
+		}
 		leftEnd = rightEnd
 	}
 

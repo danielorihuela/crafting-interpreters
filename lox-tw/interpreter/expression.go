@@ -3,6 +3,7 @@ package interpreter
 import (
 	"lox-tw/ast"
 	"lox-tw/token"
+	"lox-tw/utils"
 )
 
 func (i Interpreter) VisitAssignExpr(expr ast.AssignExpr[any]) (any, error) {
@@ -151,6 +152,24 @@ func (i Interpreter) VisitUnaryExpr(expr ast.UnaryExpr[any]) (any, error) {
 	}
 
 	return nil, nil
+}
+
+func (i Interpreter) VisitLogicalExpr(expr ast.LogicalExpr[any]) (any, error) {
+	leftValue, err := expr.Left.Accept(i)
+	if err != nil {
+		return leftValue, err
+	}
+
+	leftBool := utils.IsTruthy(leftValue)
+	if expr.Operator.Type == token.OR && leftBool {
+		return leftValue, nil
+	}
+
+	if expr.Operator.Type == token.AND && !leftBool {
+		return leftValue, nil
+	}
+
+	return expr.Right.Accept(i)
 }
 
 func (i Interpreter) VisitLiteralExpr(expr ast.LiteralExpr[any]) (any, error) {

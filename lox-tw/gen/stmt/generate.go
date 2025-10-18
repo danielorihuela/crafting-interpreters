@@ -31,6 +31,8 @@ func main() {
 		Expressions: []Statement{
 			{"Var", []Field{{"Name", "token.Token"}, {"Initializer", "Expr[T]"}}},
 			{"Expression", []Field{{"Expression", "Expr[T]"}}},
+			{"If", []Field{{"Condition", "Expr[T]"}, {"ThenBranch", "Stmt[T]"}, {"ElseBranch", "Stmt[T]"}}},
+			{"While", []Field{{"Condition", "Expr[T]"}, {"Body", "Stmt[T]"}}},
 			{"Print", []Field{{"Expression", "Expr[T]"}}},
 			{"Block", []Field{{"Statements", "[]Stmt[T]"}}},
 		},

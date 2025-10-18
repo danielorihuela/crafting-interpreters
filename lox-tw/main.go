@@ -79,8 +79,10 @@ func run(source string) error {
 		chapter_7_run(source)
 	case "8":
 		return chapter_8_run(source)
+	case "9":
+		return chapter_9_run(source)
 	default:
-		return chapter_8_run(source)
+		return chapter_9_run(source)
 	}
 
 	return nil
@@ -142,4 +144,8 @@ func chapter_8_run(source string) error {
 	}
 
 	return nil
+}
+
+func chapter_9_run(source string) error {
+	return chapter_8_run(source)
 }

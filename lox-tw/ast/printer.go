@@ -31,6 +31,12 @@ func (p AnyPrinter) VisitUnaryExpr(expr UnaryExpr[any]) (any, error) {
 	return fmt.Sprintf("(%s %s)", expr.Operator.Lexeme, right), nil
 }
 
+func (p AnyPrinter) VisitLogicalExpr(expr LogicalExpr[any]) (any, error) {
+	left, _ := expr.Left.Accept(p)
+	right, _ := expr.Right.Accept(p)
+	return fmt.Sprintf("(%s %s %s)", expr.Operator.Lexeme, left, right), nil
+}
+
 func (p AnyPrinter) VisitLiteralExpr(expr LiteralExpr[any]) (any, error) {
 	switch v := expr.Value.(type) {
 	case float64:

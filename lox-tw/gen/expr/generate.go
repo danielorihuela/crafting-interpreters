@@ -33,6 +33,7 @@ func main() {
 			{"Ternary", []Field{{"Condition", "Expr[T]"}, {"TrueExpr", "Expr[T]"}, {"FalseExpr", "Expr[T]"}}},
 			{"Binary", []Field{{"Left", "Expr[T]"}, {"Operator", "token.Token"}, {"Right", "Expr[T]"}}},
 			{"Unary", []Field{{"Operator", "token.Token"}, {"Right", "Expr[T]"}}},
+			{"Logical", []Field{{"Left", "Expr[T]"}, {"Operator", "token.Token"}, {"Right", "Expr[T]"}}},
 			{"Literal", []Field{{"Value", "any"}}},
 			{"Nothing", nil},
 

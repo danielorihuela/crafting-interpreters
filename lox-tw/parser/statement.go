@@ -51,7 +51,13 @@ func parseVarDeclaration(tokens []token.Token, start int) (ast.Stmt[any], int, e
 }
 
 func parseStatement(tokens []token.Token, start int) (ast.Stmt[any], int, error) {
-	if tokens[start].Type == token.PRINT {
+	if tokens[start].Type == token.IF {
+		return parseIfStatement(tokens, start+1)
+	} else if tokens[start].Type == token.WHILE {
+		return parseWhileStatement(tokens, start+1)
+	} else if tokens[start].Type == token.FOR {
+		return parseForStatement(tokens, start+1)
+	} else if tokens[start].Type == token.PRINT {
 		return parsePrintStatement(tokens, start+1)
 	} else if tokens[start].Type == token.LEFT_BRACE {
 		return parseBlockStatement(tokens, start+1)
@@ -93,11 +99,163 @@ func parseExpressionStatement(tokens []token.Token, start int) (ast.Stmt[any], i
 	if tokens[end].Type != token.SEMICOLON {
 		return nil, end, &ParserError{
 			Token:   tokens[end],
-			Message: "Expected ';' after expression.",
+			Message: "Expect ';' after expression.",
 		}
 	}
 
 	return ast.ExpressionStmt[any]{Expression: expr}, end + 1, nil
+}
+
+func parseIfStatement(tokens []token.Token, start int) (ast.Stmt[any], int, error) {
+	if tokens[start].Type != token.LEFT_PAREN {
+		return nil, start, &ParserError{
+			Token:   tokens[start],
+			Message: "Expected '(' after 'if'.",
+		}
+	}
+
+	condition, end, err := parseExpression(tokens, start+1)
+	if err != nil {
+		return nil, end, err
+	}
+
+	if tokens[end].Type != token.RIGHT_PAREN {
+		return nil, end, &ParserError{
+			Token:   tokens[end],
+			Message: "Expected ')' after if condition.",
+		}
+	}
+
+	thenBranch, end, err := parseStatement(tokens, end+1)
+	if err != nil {
+		return nil, end, err
+	}
+
+	var elseBranch ast.Stmt[any] = nil
+	if tokens[end].Type == token.ELSE {
+		elseBranch, end, err = parseStatement(tokens, end+1)
+		if err != nil {
+			return nil, end, err
+		}
+	}
+
+	return ast.IfStmt[any]{Condition: condition, ThenBranch: thenBranch, ElseBranch: elseBranch}, end, nil
+}
+
+func parseWhileStatement(tokens []token.Token, start int) (ast.Stmt[any], int, error) {
+	if tokens[start].Type != token.LEFT_PAREN {
+		return nil, start, &ParserError{
+			Token:   tokens[start],
+			Message: "Expected '(' after 'while'.",
+		}
+	}
+
+	condition, end, err := parseExpression(tokens, start+1)
+	if err != nil {
+		return nil, end, err
+	}
+
+	if tokens[end].Type != token.RIGHT_PAREN {
+		return nil, end, &ParserError{
+			Token:   tokens[end],
+			Message: "Expected ')' after while condition.",
+		}
+	}
+
+	body, end, err := parseStatement(tokens, end+1)
+	if err != nil {
+		return nil, end, err
+	}
+
+	return ast.WhileStmt[any]{Condition: condition, Body: body}, end, nil
+}
+
+func parseForStatement(tokens []token.Token, start int) (ast.Stmt[any], int, error) {
+	if tokens[start].Type != token.LEFT_PAREN {
+		return nil, start, &ParserError{
+			Token:   tokens[start],
+			Message: "Expected '(' after 'for'.",
+		}
+	}
+
+	var initializer ast.Stmt[any]
+	var end int
+	var err error
+	if tokens[start+1].Type == token.SEMICOLON {
+		initializer = nil
+		end = start + 2
+	} else if tokens[start+1].Type == token.VAR {
+		initializer, end, err = parseVarDeclaration(tokens, start+2)
+		if err != nil {
+			return nil, end, err
+		}
+	} else {
+		initializer, end, err = parseExpressionStatement(tokens, start+1)
+		if err != nil {
+			return nil, end, err
+		}
+	}
+
+	var condition ast.Expr[any] = nil
+	if tokens[end].Type != token.SEMICOLON {
+		condition, end, err = parseExpression(tokens, end)
+		if err != nil {
+			return nil, end, err
+		}
+	}
+	if tokens[end].Type != token.SEMICOLON {
+		return nil, end, &ParserError{
+			Token:   tokens[end],
+			Message: "Expected ';' after loop condition.",
+		}
+	}
+	if tokens[end].Type == token.SEMICOLON {
+		end += 1
+	}
+
+	var increment ast.Expr[any] = nil
+	if tokens[end].Type != token.RIGHT_PAREN {
+		increment, end, err = parseExpression(tokens, end)
+		if err != nil {
+			return nil, end, err
+		}
+	}
+	if tokens[end].Type != token.RIGHT_PAREN {
+		return nil, end, &ParserError{
+			Token:   tokens[end],
+			Message: "Expected ')' after for clauses.",
+		}
+	}
+	if tokens[end].Type == token.RIGHT_PAREN {
+		end += 1
+	}
+
+	body, end, err := parseStatement(tokens, end)
+	if err != nil {
+		return nil, end, err
+	}
+
+	// Desugar the for loop into a while loop
+	if increment != nil {
+		body = ast.BlockStmt[any]{Statements: []ast.Stmt[any]{
+			body,
+			ast.ExpressionStmt[any]{Expression: increment},
+		}}
+	}
+
+	if condition == nil {
+		condition = ast.LiteralExpr[any]{Value: true}
+	}
+	body = ast.WhileStmt[any]{Condition: condition, Body: body}
+
+	if initializer != nil {
+		body = ast.BlockStmt[any]{Statements: []ast.Stmt[any]{
+			initializer,
+			body,
+		}}
+	}
+
+	return body, end, nil
 }
 
 func parsePrintStatement(tokens []token.Token, start int) (ast.Stmt[any], int, error) {
@@ -109,7 +267,7 @@ func parsePrintStatement(tokens []token.Token, start int) (ast.Stmt[any], int, e
 	if tokens[end].Type != token.SEMICOLON {
 		return nil, end, &ParserError{
 			Token:   tokens[end],
-			Message: "Expected ';' after expression.",
+			Message: "Expect ';' after expression.",
 		}
 	}
 

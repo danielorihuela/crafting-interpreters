@@ -25,16 +25,21 @@ declaration           → variableDeclaration | statement
 variableDeclaration   → "var" IDENTIFIER ("=" expression )? ";"
 
 # Statements
-statement             → expressionStatement | printStatement | blockStatement
+statement             → expressionStatement | ifStatement | whileStatement | forStatement | printStatement | blockStatement
 expressionStatement   → expression ";"
+ifStatement           → "if" "(" expression ")" statement ( "else" statement )?
+whileStatement        → "while" "(" expression ")" statement
+forStatement          → "for" "(" ( variableDeclaration | expressionStatement | ";" ) expression? ";" expression? ";" ")" statement
 printStatement        → "print" expression ";"
 blockStatement        → "{" declaration* "}"
 
 # Expressions
-expression            → comma
+expression            → assignment
 assignment            → IDENTIFIER "=" assignment | comma
 comma                 → ternary ( "," ternary )*
-ternary               → equality "?" expression ":" expression
+ternary               → logic_or "?" expression ":" expression
+logic_or              → logic_and ( "or" logic_and )*
+logic_and             → equality ( "or" equality )*
 equality              → comparison ( ( "!=" | "==" ) comparison )*
 comparison            → term ( ( ">" | ">=" | "<" | "<=" ) term )*
 term                  → factor ( ( "-" | "+" ) factor )*

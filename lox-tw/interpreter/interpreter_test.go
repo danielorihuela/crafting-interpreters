@@ -58,6 +58,27 @@ func TestExprEvaluation(t *testing.T) {
 		{"Ternary with float", "1.0 > 0.0 ? 1.0 : 2.0", 1.0},
 		{"Ternary with float false", "1.0 < 0.0 ? 1.0 : 2.0", 2.0},
 
+		// Logical expressions
+		{"Logical AND true true", "true and true", true},
+		{"Logical AND true false", "true and false", false},
+		{"Logical AND false true", "false and true", false},
+		{"Logical AND false false", "false and false", false},
+
+		{"Logical OR true true", "true or true", true},
+		{"Logical OR true false", "true or false", true},
+		{"Logical OR false true", "false or true", true},
+		{"Logical OR false false", "false or false", false},
+
+		{"Logical AND truthy truthy", "1.0 and true", true},
+		{"Logical AND truthy falsy", "1.0 and false", false},
+		{"Logical AND falsy truthy", "nil and 1.0", nil},
+		{"Logical AND falsy falsy", "nil and nil", nil},
+
+		{"Logical OR truthy truthy", "1.0 or true", 1.0},
+		{"Logical OR truthy falsy", "1.0 or nil", 1.0},
+		{"Logical OR falsy truthy", "nil or 1.0", 1.0},
+		{"Logical OR falsy falsy", "nil or nil", nil},
+
 		// Complex expressions
 		{"Complex expression", "((1.0 + 2.0) * 3.0 > 5.0 ? -4.0 : 6.0) / 2.0", -2.0},
 	}

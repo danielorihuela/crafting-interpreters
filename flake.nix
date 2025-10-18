@@ -46,6 +46,7 @@
           CHAPTER=6 $dart tool/bin/test.dart chap06_parsing --interpreter ../lox-tw/lox-tw
           CHAPTER=7 $dart tool/bin/test.dart chap07_evaluating --interpreter ../lox-tw/lox-tw
           CHAPTER=8 $dart tool/bin/test.dart chap08_statements --interpreter ../lox-tw/lox-tw
+          CHAPTER=9 $dart tool/bin/test.dart chap09_control --interpreter ../lox-tw/lox-tw
           cd ..
 
           (cd lox-tw; $go clean)

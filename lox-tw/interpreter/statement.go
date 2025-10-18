@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"lox-tw/ast"
+	"lox-tw/utils"
 )
 
 func (i Interpreter) VisitVarStmt(stmt ast.VarStmt[any]) error {
@@ -28,6 +29,41 @@ func (i Interpreter) VisitVarExpr(expr ast.VarExpr[any]) (any, error) {
 func (i Interpreter) VisitExpressionStmt(stmt ast.ExpressionStmt[any]) error {
 	_, err := stmt.Expression.Accept(i)
 	return err
+}
+
+func (i Interpreter) VisitIfStmt(stmt ast.IfStmt[any]) error {
+	condition, err := stmt.Condition.Accept(i)
+	if err != nil {
+		return err
+	}
+
+	if utils.IsTruthy(condition) {
+		return stmt.ThenBranch.Accept(i)
+	} else if stmt.ElseBranch != nil {
+		return stmt.ElseBranch.Accept(i)
+	}
+
+	return nil
+}
+
+func (i Interpreter) VisitWhileStmt(stmt ast.WhileStmt[any]) error {
+	for {
+		condition, err := stmt.Condition.Accept(i)
+		if err != nil {
+			return err
+		}
+
+		if !utils.IsTruthy(condition) {
+			break
+		}
+
+		err = stmt.Body.Accept(i)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (i Interpreter) VisitPrintStmt(stmt ast.PrintStmt[any]) error {

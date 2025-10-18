@@ -9,6 +9,8 @@ type Stmt[T any] interface {
 type StmtVisitor[T any] interface {
 	VisitVarStmt(stmt VarStmt[T]) error
 	VisitExpressionStmt(stmt ExpressionStmt[T]) error
+	VisitIfStmt(stmt IfStmt[T]) error
+	VisitWhileStmt(stmt WhileStmt[T]) error
 	VisitPrintStmt(stmt PrintStmt[T]) error
 	VisitBlockStmt(stmt BlockStmt[T]) error
 }
@@ -28,6 +30,25 @@ type ExpressionStmt[T any] struct {
 
 func (e ExpressionStmt[T]) Accept(visitor StmtVisitor[T]) error {
 	return visitor.VisitExpressionStmt(e)
+}
+
+type IfStmt[T any] struct {
+	Condition  Expr[T]
+	ThenBranch Stmt[T]
+	ElseBranch Stmt[T]
+}
+
+func (e IfStmt[T]) Accept(visitor StmtVisitor[T]) error {
+	return visitor.VisitIfStmt(e)
+}
+
+type WhileStmt[T any] struct {
+	Condition Expr[T]
+	Body      Stmt[T]
+}
+
+func (e WhileStmt[T]) Accept(visitor StmtVisitor[T]) error {
+	return visitor.VisitWhileStmt(e)
 }
 
 type PrintStmt[T any] struct {
