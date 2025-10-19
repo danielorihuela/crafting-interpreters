@@ -14,3 +14,9 @@ type RuntimeError struct {
 func (e *RuntimeError) Error() string {
 	return fmt.Sprintf("%s\n[line %d]", e.Message, e.Token.Line)
 }
+
+type BreakError struct{}
+
+func (e *BreakError) Error() string {
+	return "Break statement encountered"
+}

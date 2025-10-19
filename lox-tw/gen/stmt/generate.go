@@ -35,6 +35,7 @@ func main() {
 			{"While", []Field{{"Condition", "Expr[T]"}, {"Body", "Stmt[T]"}}},
 			{"Print", []Field{{"Expression", "Expr[T]"}}},
 			{"Block", []Field{{"Statements", "[]Stmt[T]"}}},
+			{"Break", []Field{}},
 		},
 	}
 

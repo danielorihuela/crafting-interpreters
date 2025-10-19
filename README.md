@@ -25,13 +25,14 @@ declaration           → variableDeclaration | statement
 variableDeclaration   → "var" IDENTIFIER ("=" expression )? ";"
 
 # Statements
-statement             → expressionStatement | ifStatement | whileStatement | forStatement | printStatement | blockStatement
+statement             → expressionStatement | ifStatement | whileStatement | forStatement | printStatement | blockStatement | breakStatement
 expressionStatement   → expression ";"
 ifStatement           → "if" "(" expression ")" statement ( "else" statement )?
 whileStatement        → "while" "(" expression ")" statement
 forStatement          → "for" "(" ( variableDeclaration | expressionStatement | ";" ) expression? ";" expression? ";" ")" statement
 printStatement        → "print" expression ";"
 blockStatement        → "{" declaration* "}"
+breakStatement        → "break" ";"
 
 # Expressions
 expression            → assignment

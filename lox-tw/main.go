@@ -146,5 +146,28 @@ func chapter_8_run(source string) error {
 }
 
 func chapter_9_run(source string) error {
-	return chapter_8_run(source)
+	tokens, err := scanner.ScanTokens(source)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		return err
+	}
+
+	stmts, err := parser.ParseTokensToStmts(tokens)
+	if err != nil {
+		return err
+	}
+
+	codeInterpreter := interpreter.NewInterpreter()
+	for _, stmt := range stmts {
+		err := stmt.Accept(codeInterpreter)
+		if _, ok := err.(*interpreter.BreakError); ok {
+			continue
+		}
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			RUNTIME_ERROR = true
+		}
+	}
+
+	return nil
 }

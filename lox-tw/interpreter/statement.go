@@ -89,10 +89,16 @@ func (i Interpreter) VisitBlockStmt(stmt ast.BlockStmt[any]) error {
 	previousEnv := i.environment
 	i.environment = NewEnvironment().WithParent(previousEnv)
 
-	var err error = nil
 	for _, statement := range stmt.Statements {
-		err = statement.Accept(i)
+		err := statement.Accept(i)
+		if err != nil {
+			return err
+		}
 	}
 
-	return err
+	return nil
+}
+
+func (i Interpreter) VisitBreakStmt(stmt ast.BreakStmt[any]) error {
+	return &BreakError{}
 }

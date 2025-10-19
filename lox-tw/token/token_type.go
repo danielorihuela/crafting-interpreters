@@ -60,6 +60,7 @@ const (
 	TRUE
 	VAR
 	WHILE
+	BREAK
 
 	EOF
 )
@@ -107,6 +108,7 @@ func (t TokenType) String() string {
 		"TRUE",
 		"VAR",
 		"WHILE",
+		"BREAK",
 		"EOF",
 	}[t]
 }
@@ -169,6 +171,7 @@ func TryKeywordTokenType(lexeme string) TokenType {
 		"true":   TRUE,
 		"var":    VAR,
 		"while":  WHILE,
+		"break":  BREAK,
 	}[lexeme]
 }
 

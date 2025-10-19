@@ -6,13 +6,17 @@ import (
 )
 
 func parseDeclaration(tokens []token.Token, start int) (ast.Stmt[any], int, error) {
+	return parseDeclarationInner(tokens, start, 0)
+}
+
+func parseDeclarationInner(tokens []token.Token, start int, depth int) (ast.Stmt[any], int, error) {
 	var stmt ast.Stmt[any]
 	var end int
 	var err error
 	if tokens[start].Type == token.VAR {
 		stmt, end, err = parseVarDeclaration(tokens, start+1)
 	} else {
-		stmt, end, err = parseStatement(tokens, start)
+		stmt, end, err = parseStatement(tokens, start, depth)
 	}
 
 	if err != nil {
@@ -50,28 +54,30 @@ func parseVarDeclaration(tokens []token.Token, start int) (ast.Stmt[any], int, e
 	return ast.VarStmt[any]{Name: tokens[start], Initializer: initializer}, end + 1, nil
 }
 
-func parseStatement(tokens []token.Token, start int) (ast.Stmt[any], int, error) {
+func parseStatement(tokens []token.Token, start int, depth int) (ast.Stmt[any], int, error) {
 	if tokens[start].Type == token.IF {
-		return parseIfStatement(tokens, start+1)
+		return parseIfStatement(tokens, start+1, depth)
 	} else if tokens[start].Type == token.WHILE {
-		return parseWhileStatement(tokens, start+1)
+		return parseWhileStatement(tokens, start+1, depth+1)
 	} else if tokens[start].Type == token.FOR {
-		return parseForStatement(tokens, start+1)
+		return parseForStatement(tokens, start+1, depth+1)
 	} else if tokens[start].Type == token.PRINT {
 		return parsePrintStatement(tokens, start+1)
 	} else if tokens[start].Type == token.LEFT_BRACE {
-		return parseBlockStatement(tokens, start+1)
+		return parseBlockStatement(tokens, start+1, depth)
+	} else if tokens[start].Type == token.BREAK {
+		return parseBreakStatement(tokens, start+1, depth)
 	}
 
 	return parseExpressionStatement(tokens, start)
 }
 
-func parseBlockStatement(tokens []token.Token, start int) (ast.Stmt[any], int, error) {
+func parseBlockStatement(tokens []token.Token, start int, depth int) (ast.Stmt[any], int, error) {
 	var statements []ast.Stmt[any]
 	pos := start
 
 	for tokens[pos].Type != token.RIGHT_BRACE && tokens[pos].Type != token.EOF {
-		declaration, end, err := parseDeclaration(tokens, pos)
+		declaration, end, err := parseDeclarationInner(tokens, pos, depth)
 		if err != nil {
 			return nil, end, err
 		}
@@ -106,7 +112,7 @@ func parseExpressionStatement(tokens []token.Token, start int) (ast.Stmt[any], i
 	return ast.ExpressionStmt[any]{Expression: expr}, end + 1, nil
 }
 
-func parseIfStatement(tokens []token.Token, start int) (ast.Stmt[any], int, error) {
+func parseIfStatement(tokens []token.Token, start int, depth int) (ast.Stmt[any], int, error) {
 	if tokens[start].Type != token.LEFT_PAREN {
 		return nil, start, &ParserError{
 			Token:   tokens[start],
@@ -126,14 +132,14 @@ func parseIfStatement(tokens []token.Token, start int) (ast.Stmt[any], int, erro
 		}
 	}
 
-	thenBranch, end, err := parseStatement(tokens, end+1)
+	thenBranch, end, err := parseStatement(tokens, end+1, depth)
 	if err != nil {
 		return nil, end, err
 	}
 
 	var elseBranch ast.Stmt[any] = nil
 	if tokens[end].Type == token.ELSE {
-		elseBranch, end, err = parseStatement(tokens, end+1)
+		elseBranch, end, err = parseStatement(tokens, end+1, depth)
 		if err != nil {
 			return nil, end, err
 		}
@@ -142,7 +148,7 @@ func parseIfStatement(tokens []token.Token, start int) (ast.Stmt[any], int, erro
 	return ast.IfStmt[any]{Condition: condition, ThenBranch: thenBranch, ElseBranch: elseBranch}, end, nil
 }
 
-func parseWhileStatement(tokens []token.Token, start int) (ast.Stmt[any], int, error) {
+func parseWhileStatement(tokens []token.Token, start int, depth int) (ast.Stmt[any], int, error) {
 	if tokens[start].Type != token.LEFT_PAREN {
 		return nil, start, &ParserError{
 			Token:   tokens[start],
@@ -162,7 +168,7 @@ func parseWhileStatement(tokens []token.Token, start int) (ast.Stmt[any], int, e
 		}
 	}
 
-	body, end, err := parseStatement(tokens, end+1)
+	body, end, err := parseStatement(tokens, end+1, depth)
 	if err != nil {
 		return nil, end, err
 	}
@@ -170,7 +176,7 @@ func parseWhileStatement(tokens []token.Token, start int) (ast.Stmt[any], int, e
 	return ast.WhileStmt[any]{Condition: condition, Body: body}, end, nil
 }
 
-func parseForStatement(tokens []token.Token, start int) (ast.Stmt[any], int, error) {
+func parseForStatement(tokens []token.Token, start int, depth int) (ast.Stmt[any], int, error) {
 	if tokens[start].Type != token.LEFT_PAREN {
 		return nil, start, &ParserError{
 			Token:   tokens[start],
@@ -230,7 +236,7 @@ func parseForStatement(tokens []token.Token, start int) (ast.Stmt[any], int, err
 		end += 1
 	}
 
-	body, end, err := parseStatement(tokens, end)
+	body, end, err := parseStatement(tokens, end, depth)
 	if err != nil {
 		return nil, end, err
 	}
@@ -256,6 +262,24 @@ func parseForStatement(tokens []token.Token, start int) (ast.Stmt[any], int, err
 	}
 
 	return body, end, nil
+}
+
+func parseBreakStatement(tokens []token.Token, start int, depth int) (ast.Stmt[any], int, error) {
+	if tokens[start].Type != token.SEMICOLON {
+		return nil, start, &ParserError{
+			Token:   tokens[start],
+			Message: "Expect ';' after 'break'.",
+		}
+	}
+
+	if depth == 0 {
+		return nil, start - 1, &ParserError{
+			Token:   tokens[start-1],
+			Message: "Must be inside a loop to use 'break'.",
+		}
+	}
+
+	return ast.BreakStmt[any]{}, start + 1, nil
 }
 
 func parsePrintStatement(tokens []token.Token, start int) (ast.Stmt[any], int, error) {
