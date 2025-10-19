@@ -1,6 +1,9 @@
 package parser
 
 import (
+	"fmt"
+	"os"
+
 	"lox-tw/ast"
 	"lox-tw/token"
 )
@@ -14,15 +17,22 @@ func ParseTokensToStmts(tokens []token.Token) ([]ast.Stmt[any], error) {
 	var statements []ast.Stmt[any]
 	pos := 0
 
-	for tokens[pos].Type != token.EOF {
+	var finalError error
+	for pos < len(tokens) && tokens[pos].Type != token.EOF {
 		stmt, end, err := parseDeclaration(tokens, pos)
+		if end == pos {
+			break
+		}
+		pos = end
+
 		if err != nil {
-			return nil, err
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			finalError = err
+			continue
 		}
 
 		statements = append(statements, stmt)
-		pos = end
 	}
 
-	return statements, nil
+	return statements, finalError
 }

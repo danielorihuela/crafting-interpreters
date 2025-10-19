@@ -130,7 +130,6 @@ func chapter_8_run(source string) error {
 
 	stmts, err := parser.ParseTokensToStmts(tokens)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
 		return err
 	}
 
