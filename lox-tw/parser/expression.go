@@ -9,11 +9,15 @@ import (
 )
 
 func parseExpression(tokens []token.Token, start int) (ast.Expr[any], int, error) {
-	return parseAssign(tokens, start)
+	return parseComma(tokens, start)
+}
+
+func parseComma(tokens []token.Token, start int) (ast.Expr[any], int, error) {
+	return parseLeftAssociativeRule("comma", parseAssign, tokens, start, []token.TokenType{token.COMMA})
 }
 
 func parseAssign(tokens []token.Token, start int) (ast.Expr[any], int, error) {
-	comma, endComma, err := parseComma(tokens, start)
+	comma, endComma, err := parseTernary(tokens, start)
 	if err != nil || tokens[endComma].Type != token.EQUAL {
 		return comma, endComma, err
 	}
@@ -33,10 +37,6 @@ func parseAssign(tokens []token.Token, start int) (ast.Expr[any], int, error) {
 	}
 
 	return ast.AssignExpr[any]{Name: v.Name, Value: assign}, endAssign, nil
-}
-
-func parseComma(tokens []token.Token, start int) (ast.Expr[any], int, error) {
-	return parseLeftAssociativeRule("comma", parseTernary, tokens, start, []token.TokenType{token.COMMA})
 }
 
 func parseTernary(tokens []token.Token, start int) (ast.Expr[any], int, error) {
