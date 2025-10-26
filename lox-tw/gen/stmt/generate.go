@@ -36,6 +36,8 @@ func main() {
 			{"Print", []Field{{"Expression", "Expr[T]"}}},
 			{"Block", []Field{{"Statements", "[]Stmt[T]"}}},
 			{"Break", []Field{}},
+			{"Function", []Field{{"Name", "token.Token"}, {"Parameters", "[]token.Token"}, {"Body", "[]Stmt[T]"}}},
+			{"Return", []Field{{"Keyword", "token.Token"}, {"Value", "Expr[T]"}}},
 		},
 	}
 

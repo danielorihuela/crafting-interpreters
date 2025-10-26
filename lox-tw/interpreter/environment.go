@@ -14,6 +14,13 @@ func NewEnvironment() *Environment {
 	}
 }
 
+func NewGlobalEnvironment() *Environment {
+	environment := NewEnvironment()
+	environment.Define("clock", Clock{})
+
+	return environment
+}
+
 func (env *Environment) WithParent(parent *Environment) *Environment {
 	env.enclosing = parent
 	return env

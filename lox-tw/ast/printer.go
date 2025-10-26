@@ -63,3 +63,13 @@ func (p AnyPrinter) VisitVarExpr(expr VarExpr[any]) (any, error) {
 func (p AnyPrinter) VisitAssignExpr(expr AssignExpr[any]) (any, error) {
 	return fmt.Sprintf("(%s = %s)", expr.Name.Lexeme, expr.Value), nil
 }
+
+func (p AnyPrinter) VisitCallExpr(expr CallExpr[any]) (any, error) {
+	callee, _ := expr.Callee.Accept(p)
+	var arguments []string
+	for _, arg := range expr.Arguments {
+		argStr, _ := arg.Accept(p)
+		arguments = append(arguments, fmt.Sprintf("%v", argStr))
+	}
+	return fmt.Sprintf("(call %s (%s))", callee, strings.Join(arguments, " ")), nil
+}

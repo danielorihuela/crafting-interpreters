@@ -21,11 +21,14 @@ nix run .#test
 program               → declaration* EOF
 
 # Declarations
-declaration           → variableDeclaration | statement
+declaration           → functionDeclaration | variableDeclaration | statement
+functionDeclaration   → "fun" function
+function              → IDENTIFIER "(" parameters? ")" block
+parameters            → IDENTIFIER ( "," IDENTIFIER )*
 variableDeclaration   → "var" IDENTIFIER ("=" expression )? ";"
 
 # Statements
-statement             → expressionStatement | ifStatement | whileStatement | forStatement | printStatement | blockStatement | breakStatement
+statement             → expressionStatement | ifStatement | whileStatement | forStatement | printStatement | blockStatement | breakStatement | returnStatement
 expressionStatement   → expression ";"
 ifStatement           → "if" "(" expression ")" statement ( "else" statement )?
 whileStatement        → "while" "(" expression ")" statement
@@ -33,6 +36,7 @@ forStatement          → "for" "(" ( variableDeclaration | expressionStatement 
 printStatement        → "print" expression ";"
 blockStatement        → "{" declaration* "}"
 breakStatement        → "break" ";"
+returnStatement       → "return" expression? ";"
 
 # Expressions
 expression            → assignment
@@ -45,6 +49,8 @@ equality              → comparison ( ( "!=" | "==" ) comparison )*
 comparison            → term ( ( ">" | ">=" | "<" | "<=" ) term )*
 term                  → factor ( ( "-" | "+" ) factor )*
 factor                → unary ( ( "/" | "*" ) unary )*
-unary                 → ( "!" | "-" ) unary | primary
+unary                 → ( "!" | "-" ) unary | call
+call                  → primary ( "(" arguments? ")" )*
+arguments             → expression ( "," expression )*
 primary               → NUMBER | STRING | "true" | "false" | "nil" | "(" expression ")" | IDENTIFIER
 ```

@@ -1,6 +1,8 @@
 package interpreter
 
 import (
+	"fmt"
+
 	"lox-tw/ast"
 	"lox-tw/token"
 	"lox-tw/utils"
@@ -141,13 +143,7 @@ func (i Interpreter) VisitUnaryExpr(expr ast.UnaryExpr[any]) (any, error) {
 		}
 		return -parsedValue, nil
 	case token.BANG:
-		parsedValue, ok := rightValue.(bool)
-		if !ok {
-			return rightValue, &RuntimeError{
-				Token:   expr.Operator,
-				Message: "Invalid boolean for unary bang",
-			}
-		}
+		parsedValue := utils.IsTruthy(rightValue)
 		return !parsedValue, nil
 	}
 
@@ -178,4 +174,36 @@ func (i Interpreter) VisitLiteralExpr(expr ast.LiteralExpr[any]) (any, error) {
 
 func (i Interpreter) VisitNothingExpr(expr ast.NothingExpr[any]) (any, error) {
 	return nil, nil
+}
+
+func (i Interpreter) VisitCallExpr(expr ast.CallExpr[any]) (any, error) {
+	callee, err := expr.Callee.Accept(i)
+	if err != nil {
+		return callee, err
+	}
+	function, ok := callee.(Callable)
+	if !ok {
+		return nil, &RuntimeError{
+			Token:   expr.Parenthesis,
+			Message: "Can only call functions and classes.",
+		}
+	}
+
+	arguments := []any{}
+	for _, arg := range expr.Arguments {
+		argValue, err := arg.Accept(i)
+		if err != nil {
+			return argValue, err
+		}
+		arguments = append(arguments, argValue)
+	}
+
+	if len(arguments) != function.Arity() {
+		return nil, &RuntimeError{
+			Token:   expr.Parenthesis,
+			Message: fmt.Sprintf("Expected %d arguments but got %d.", function.Arity(), len(arguments)),
+		}
+	}
+
+	return function.Call(i, arguments)
 }

@@ -20,3 +20,11 @@ type BreakError struct{}
 func (e *BreakError) Error() string {
 	return "Break statement encountered"
 }
+
+type ReturnError struct {
+	Value any
+}
+
+func (e *ReturnError) Error() string {
+	return "Return statement encountered"
+}

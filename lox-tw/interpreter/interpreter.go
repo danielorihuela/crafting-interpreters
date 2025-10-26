@@ -6,6 +6,6 @@ type Interpreter struct {
 
 func NewInterpreter() *Interpreter {
 	return &Interpreter{
-		environment: NewEnvironment(),
+		environment: NewGlobalEnvironment(),
 	}
 }

@@ -102,3 +102,22 @@ func (i Interpreter) VisitBlockStmt(stmt ast.BlockStmt[any]) error {
 func (i Interpreter) VisitBreakStmt(stmt ast.BreakStmt[any]) error {
 	return &BreakError{}
 }
+
+func (i Interpreter) VisitFunctionStmt(stmt ast.FunctionStmt[any]) error {
+	function := NewFunction(stmt, i.environment)
+	i.environment.Define(stmt.Name.Lexeme, function)
+	return nil
+}
+
+func (i Interpreter) VisitReturnStmt(stmt ast.ReturnStmt[any]) error {
+	var value any = nil
+	if stmt.Value != nil {
+		var err error
+		value, err = stmt.Value.Accept(i)
+		if err != nil {
+			return err
+		}
+	}
+
+	return &ReturnError{Value: value}
+}

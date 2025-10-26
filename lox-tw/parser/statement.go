@@ -15,6 +15,8 @@ func parseDeclarationInner(tokens []token.Token, start int, depth int) (ast.Stmt
 	var err error
 	if tokens[start].Type == token.VAR {
 		stmt, end, err = parseVarDeclaration(tokens, start+1)
+	} else if tokens[start].Type == token.FUN {
+		stmt, end, err = parseFunctionDeclaration("function", tokens, start+1)
 	} else {
 		stmt, end, err = parseStatement(tokens, start, depth)
 	}
@@ -24,6 +26,75 @@ func parseDeclarationInner(tokens []token.Token, start int, depth int) (ast.Stmt
 	}
 
 	return stmt, end, err
+}
+
+func parseFunctionDeclaration(kind string, tokens []token.Token, start int) (ast.Stmt[any], int, error) {
+	if tokens[start].Type != token.IDENTIFIER {
+		return nil, start, &ParserError{
+			Token:   tokens[start],
+			Message: "Expect " + kind + " name.",
+		}
+	}
+	name := tokens[start]
+	pos := start + 1
+
+	if tokens[pos].Type != token.LEFT_PAREN {
+		return nil, pos, &ParserError{
+			Token:   tokens[pos],
+			Message: "Expect '(' after " + kind + " name.",
+		}
+	}
+	pos += 1
+
+	parameters := []token.Token{}
+	if tokens[pos].Type != token.RIGHT_PAREN {
+		for {
+			if len(parameters) >= 255 {
+				return nil, pos, &ParserError{
+					Token:   tokens[pos],
+					Message: "Can't have more than 255 parameters.",
+				}
+			}
+
+			if tokens[pos].Type != token.IDENTIFIER {
+				return nil, pos, &ParserError{
+					Token:   tokens[pos],
+					Message: "Expect parameter name.",
+				}
+			}
+
+			parameters = append(parameters, tokens[pos])
+			pos += 1
+
+			if tokens[pos].Type != token.COMMA {
+				break
+			}
+			pos += 1
+		}
+	}
+
+	if tokens[pos].Type != token.RIGHT_PAREN {
+		return nil, pos, &ParserError{
+			Token:   tokens[pos],
+			Message: "Expect ')' after parameters.",
+		}
+	}
+	pos += 1
+
+	if tokens[pos].Type != token.LEFT_BRACE {
+		return nil, pos, &ParserError{
+			Token:   tokens[pos],
+			Message: "Expect '{' before " + kind + " body.",
+		}
+	}
+	pos += 1
+
+	body, pos, err := parseBlockStatement(tokens, pos, 0)
+	if err != nil {
+		return nil, pos, err
+	}
+
+	return ast.FunctionStmt[any]{Name: name, Parameters: parameters, Body: body.(ast.BlockStmt[any]).Statements}, pos, nil
 }
 
 func parseVarDeclaration(tokens []token.Token, start int) (ast.Stmt[any], int, error) {
@@ -67,6 +138,8 @@ func parseStatement(tokens []token.Token, start int, depth int) (ast.Stmt[any], 
 		return parseBlockStatement(tokens, start+1, depth)
 	} else if tokens[start].Type == token.BREAK {
 		return parseBreakStatement(tokens, start+1, depth)
+	} else if tokens[start].Type == token.RETURN {
+		return parseReturnStatement(tokens, start+1)
 	}
 
 	return parseExpressionStatement(tokens, start)
@@ -280,6 +353,27 @@ func parseBreakStatement(tokens []token.Token, start int, depth int) (ast.Stmt[a
 	}
 
 	return ast.BreakStmt[any]{}, start + 1, nil
+}
+
+func parseReturnStatement(tokens []token.Token, start int) (ast.Stmt[any], int, error) {
+	var value ast.Expr[any] = nil
+	var end int = start
+	var err error
+	if tokens[start].Type != token.SEMICOLON {
+		value, end, err = parseExpression(tokens, start)
+		if err != nil {
+			return nil, end, err
+		}
+	}
+
+	if tokens[end].Type != token.SEMICOLON {
+		return nil, end, &ParserError{
+			Token:   tokens[end],
+			Message: "Expect ';' after return value.",
+		}
+	}
+
+	return ast.ReturnStmt[any]{Keyword: tokens[start-1], Value: value}, end + 1, nil
 }
 
 func parsePrintStatement(tokens []token.Token, start int) (ast.Stmt[any], int, error) {

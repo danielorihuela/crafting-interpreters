@@ -14,6 +14,8 @@ type StmtVisitor[T any] interface {
 	VisitPrintStmt(stmt PrintStmt[T]) error
 	VisitBlockStmt(stmt BlockStmt[T]) error
 	VisitBreakStmt(stmt BreakStmt[T]) error
+	VisitFunctionStmt(stmt FunctionStmt[T]) error
+	VisitReturnStmt(stmt ReturnStmt[T]) error
 }
 
 type VarStmt[T any] struct {
@@ -73,4 +75,23 @@ type BreakStmt[T any] struct {
 
 func (e BreakStmt[T]) Accept(visitor StmtVisitor[T]) error {
 	return visitor.VisitBreakStmt(e)
+}
+
+type FunctionStmt[T any] struct {
+	Name       token.Token
+	Parameters []token.Token
+	Body       []Stmt[T]
+}
+
+func (e FunctionStmt[T]) Accept(visitor StmtVisitor[T]) error {
+	return visitor.VisitFunctionStmt(e)
+}
+
+type ReturnStmt[T any] struct {
+	Keyword token.Token
+	Value   Expr[T]
+}
+
+func (e ReturnStmt[T]) Accept(visitor StmtVisitor[T]) error {
+	return visitor.VisitReturnStmt(e)
 }

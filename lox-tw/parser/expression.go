@@ -91,7 +91,7 @@ func parseFactor(tokens []token.Token, start int) (ast.Expr[any], int, error) {
 
 func parseUnary(tokens []token.Token, start int) (ast.Expr[any], int, error) {
 	if tokens[start].Type.NotIn(token.MINUS, token.BANG) {
-		return parsePrimary(tokens, start)
+		return parseCall(tokens, start)
 	}
 
 	expr, end, err := parseUnary(tokens, start+1)
@@ -100,6 +100,28 @@ func parseUnary(tokens []token.Token, start int) (ast.Expr[any], int, error) {
 	}
 
 	return ast.UnaryExpr[any]{Operator: tokens[start], Right: expr}, end, nil
+}
+
+func parseCall(tokens []token.Token, start int) (ast.Expr[any], int, error) {
+	callee, end, err := parsePrimary(tokens, start)
+	if err != nil {
+		return callee, end, err
+	}
+
+	pos := end
+	for {
+		if tokens[pos].Type != token.LEFT_PAREN {
+			break
+		}
+
+		callee, end, err = finishCall(callee, tokens, pos+1)
+		if err != nil {
+			return callee, end, err
+		}
+		pos = end
+	}
+
+	return callee, pos, nil
 }
 
 func parsePrimary(tokens []token.Token, start int) (ast.Expr[any], int, error) {
@@ -132,6 +154,43 @@ func parsePrimary(tokens []token.Token, start int) (ast.Expr[any], int, error) {
 			Message: "Expect expression.",
 		}
 	}
+}
+
+func finishCall(callee ast.Expr[any], tokens []token.Token, start int) (ast.Expr[any], int, error) {
+	arguments := []ast.Expr[any]{}
+	pos := start
+	if tokens[pos].Type != token.RIGHT_PAREN {
+		for {
+			if len(arguments) >= 255 {
+				return nil, pos, &ParserError{
+					Token:   tokens[pos],
+					Message: "Can't have more than 255 arguments.",
+				}
+			}
+
+			arg, end, err := parseAssign(tokens, pos)
+			if err != nil {
+				return arg, end, err
+			}
+
+			arguments = append(arguments, arg)
+			pos = end
+
+			if tokens[pos].Type != token.COMMA {
+				break
+			}
+			pos += 1
+		}
+	}
+
+	if tokens[pos].Type != token.RIGHT_PAREN {
+		return nil, pos, &ParserError{
+			Token:   tokens[pos],
+			Message: "Expect ')' after arguments.",
+		}
+	}
+
+	return ast.CallExpr[any]{Callee: callee, Parenthesis: tokens[pos], Arguments: arguments}, pos + 1, nil
 }
 
 func parseLeftAssociativeRule(

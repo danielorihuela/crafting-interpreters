@@ -1,8 +1,11 @@
 package scanner
 
 import (
-	"lox-tw/token"
+	"fmt"
+	"os"
 	"strconv"
+
+	"lox-tw/token"
 )
 
 func ScanTokens(source string) ([]token.Token, error) {
@@ -80,10 +83,12 @@ func scanToken(source string, start uint, line uint) (token.Token, error) {
 	case '"':
 		return scanString(source, position, line)
 	default:
-		return token.NilToken(position, line), &ScannerError{
+		err := &ScannerError{
 			Line:    line,
-			Message: "Unexpected character: " + string(source[position]) + ".",
+			Message: "Unexpected character.",
 		}
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		return token.NilToken(position+1, line), nil
 	}
 }
 
