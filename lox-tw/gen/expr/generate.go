@@ -40,6 +40,7 @@ func main() {
 
 			{"Var", []Field{{"Name", "token.Token"}}},
 			{"Assign", []Field{{"Name", "token.Token"}, {"Value", "Expr[T]"}}},
+			{"Lambda", []Field{{"Parameters", "[]token.Token"}, {"Body", "[]Stmt[T]"}}},
 		},
 	}
 

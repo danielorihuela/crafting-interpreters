@@ -52,5 +52,6 @@ factor                → unary ( ( "/" | "*" ) unary )*
 unary                 → ( "!" | "-" ) unary | call
 call                  → primary ( "(" arguments? ")" )*
 arguments             → expression ( "," expression )*
-primary               → NUMBER | STRING | "true" | "false" | "nil" | "(" expression ")" | IDENTIFIER
+primary               → NUMBER | STRING | "true" | "false" | "nil" | "(" expression ")" | IDENTIFIER | lambda
+lambda                → "fun (" parameters? ")" block
 ```

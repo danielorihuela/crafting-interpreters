@@ -17,6 +17,7 @@ type ExprVisitor[T any] interface {
 	VisitNothingExpr(expr NothingExpr[T]) (T, error)
 	VisitVarExpr(expr VarExpr[T]) (T, error)
 	VisitAssignExpr(expr AssignExpr[T]) (T, error)
+	VisitLambdaExpr(expr LambdaExpr[T]) (T, error)
 }
 
 type GroupingExpr[T any] struct {
@@ -106,4 +107,13 @@ type AssignExpr[T any] struct {
 
 func (e AssignExpr[T]) Accept(visitor ExprVisitor[T]) (T, error) {
 	return visitor.VisitAssignExpr(e)
+}
+
+type LambdaExpr[T any] struct {
+	Parameters []token.Token
+	Body       []Stmt[T]
+}
+
+func (e LambdaExpr[T]) Accept(visitor ExprVisitor[T]) (T, error) {
+	return visitor.VisitLambdaExpr(e)
 }

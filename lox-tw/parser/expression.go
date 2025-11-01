@@ -149,6 +149,14 @@ func parsePrimary(tokens []token.Token, start int) (ast.Expr[any], int, error) {
 	case token.IDENTIFIER:
 		return ast.VarExpr[any]{Name: tokens[start]}, start + 1, nil
 	default:
+		if tokens[start].Type == token.FUN && tokens[start+1].Type != token.IDENTIFIER {
+			parameters, body, end, err := parseFunctionHelper("lambda", tokens, start+1)
+			if err != nil {
+				return nil, end, err
+			}
+
+			return ast.LambdaExpr[any]{Parameters: parameters, Body: body}, end, nil
+		}
 		return ast.LiteralExpr[any]{Value: tokens[start].Literal}, start, &ParserError{
 			Token:   tokens[start],
 			Message: "Expect expression.",

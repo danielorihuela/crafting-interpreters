@@ -73,3 +73,15 @@ func (p AnyPrinter) VisitCallExpr(expr CallExpr[any]) (any, error) {
 	}
 	return fmt.Sprintf("(call %s (%s))", callee, strings.Join(arguments, " ")), nil
 }
+
+func (p AnyPrinter) VisitLambdaExpr(expr LambdaExpr[any]) (any, error) {
+	var parameters []string
+	for _, param := range expr.Parameters {
+		parameters = append(parameters, param.Lexeme)
+	}
+	var bodyStrings []string
+	for _, stmt := range expr.Body {
+		bodyStrings = append(bodyStrings, fmt.Sprintf("%v", stmt))
+	}
+	return fmt.Sprintf("(lambda (%s) {\n%s\n})", strings.Join(parameters, " "), strings.Join(bodyStrings, "\n")), nil
+}

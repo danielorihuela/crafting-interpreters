@@ -207,3 +207,7 @@ func (i Interpreter) VisitCallExpr(expr ast.CallExpr[any]) (any, error) {
 
 	return function.Call(i, arguments)
 }
+
+func (i Interpreter) VisitLambdaExpr(expr ast.LambdaExpr[any]) (any, error) {
+	return NewLambda(expr, i.environment), nil
+}

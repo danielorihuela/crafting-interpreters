@@ -69,3 +69,42 @@ func executeBlock(statements []ast.Stmt[any], interpreter *Interpreter) error {
 
 	return nil
 }
+
+type Lambda struct {
+	declaration ast.LambdaExpr[any]
+	closure     *Environment
+}
+
+func (l Lambda) String() string {
+	return "<lambda fn>"
+}
+
+func NewLambda(lambda ast.LambdaExpr[any], closure *Environment) *Lambda {
+	return &Lambda{
+		declaration: lambda,
+		closure:     closure,
+	}
+}
+
+func (l *Lambda) Arity() int {
+	return len(l.declaration.Parameters)
+}
+
+func (l *Lambda) Call(interpreter Interpreter, arguments []any) (any, error) {
+	newInterpreter := NewInterpreter()
+	newInterpreter.environment.WithParent(l.closure)
+
+	for i, param := range l.declaration.Parameters {
+		newInterpreter.environment.Define(param.Lexeme, arguments[i])
+	}
+
+	err := executeBlock(l.declaration.Body, newInterpreter)
+	switch err := err.(type) {
+	case *ReturnError:
+		return err.Value, nil
+	default:
+		return nil, err
+	}
+
+	return nil, nil
+}
