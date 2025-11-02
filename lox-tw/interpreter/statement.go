@@ -22,10 +22,6 @@ func (i Interpreter) VisitVarStmt(stmt ast.VarStmt[any]) error {
 	return nil
 }
 
-func (i Interpreter) VisitVarExpr(expr ast.VarExpr[any]) (any, error) {
-	return i.environment.Get(expr.Name)
-}
-
 func (i Interpreter) VisitExpressionStmt(stmt ast.ExpressionStmt[any]) error {
 	_, err := stmt.Expression.Accept(i)
 	return err
@@ -86,8 +82,8 @@ func (i Interpreter) VisitPrintStmt(stmt ast.PrintStmt[any]) error {
 }
 
 func (i Interpreter) VisitBlockStmt(stmt ast.BlockStmt[any]) error {
-	previousEnv := i.environment
-	i.environment = NewEnvironment().WithParent(previousEnv)
+	parentEnv := i.environment
+	i.environment = NewChildEnvironment(parentEnv)
 
 	for _, statement := range stmt.Statements {
 		err := statement.Accept(i)

@@ -9,6 +9,7 @@ import (
 	"lox-tw/ast"
 	"lox-tw/interpreter"
 	"lox-tw/parser"
+	"lox-tw/resolver"
 	"lox-tw/scanner"
 )
 
@@ -39,6 +40,8 @@ func runFile(path string) {
 	case *scanner.ScannerError:
 		os.Exit(65)
 	case *parser.ParserError:
+		os.Exit(65)
+	case *resolver.ResolverError:
 		os.Exit(65)
 	}
 
@@ -83,8 +86,10 @@ func run(source string) error {
 		return chapter_9_run(source)
 	case "10":
 		return chapter_10_run(source)
+	case "11":
+		return chapter_11_run(source)
 	default:
-		return chapter_10_run(source)
+		return chapter_11_run(source)
 	}
 
 	return nil
@@ -135,9 +140,18 @@ func chapter_8_run(source string) error {
 		return err
 	}
 
-	interpreter := interpreter.NewInterpreter()
+	codeResolver := resolver.NewResolver()
 	for _, stmt := range stmts {
-		err := stmt.Accept(interpreter)
+		err := stmt.Accept(codeResolver)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			return err
+		}
+	}
+
+	codeInterpreter := interpreter.NewInterpreter(codeResolver.ExprToDepth)
+	for _, stmt := range stmts {
+		err := stmt.Accept(codeInterpreter)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%v\n", err)
 			RUNTIME_ERROR = true
@@ -159,7 +173,16 @@ func chapter_9_run(source string) error {
 		return err
 	}
 
-	codeInterpreter := interpreter.NewInterpreter()
+	codeResolver := resolver.NewResolver()
+	for _, stmt := range stmts {
+		err := stmt.Accept(codeResolver)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			return err
+		}
+	}
+
+	codeInterpreter := interpreter.NewInterpreter(codeResolver.ExprToDepth)
 	for _, stmt := range stmts {
 		err := stmt.Accept(codeInterpreter)
 		if _, ok := err.(*interpreter.BreakError); ok {
@@ -176,4 +199,40 @@ func chapter_9_run(source string) error {
 
 func chapter_10_run(source string) error {
 	return chapter_9_run(source)
+}
+
+func chapter_11_run(source string) error {
+	tokens, err := scanner.ScanTokens(source)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		return err
+	}
+
+	stmts, err := parser.ParseTokensToStmts(tokens)
+	if err != nil {
+		return err
+	}
+
+	codeResolver := resolver.NewResolver()
+	for _, stmt := range stmts {
+		err := stmt.Accept(codeResolver)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			return err
+		}
+	}
+
+	codeInterpreter := interpreter.NewInterpreter(codeResolver.ExprToDepth)
+	for _, stmt := range stmts {
+		err := stmt.Accept(codeInterpreter)
+		if _, ok := err.(*interpreter.BreakError); ok {
+			continue
+		}
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			RUNTIME_ERROR = true
+		}
+	}
+
+	return nil
 }

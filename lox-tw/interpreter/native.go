@@ -41,8 +41,8 @@ func (f *Function) Arity() int {
 }
 
 func (f *Function) Call(interpreter Interpreter, arguments []any) (any, error) {
-	newInterpreter := NewInterpreter()
-	newInterpreter.environment.WithParent(f.closure)
+	env := NewChildEnvironment(f.closure)
+	newInterpreter := NewInterpreterWithEnv(env, interpreter.exprToDepth)
 
 	for i, param := range f.declaration.Parameters {
 		newInterpreter.environment.Define(param.Lexeme, arguments[i])
@@ -91,8 +91,8 @@ func (l *Lambda) Arity() int {
 }
 
 func (l *Lambda) Call(interpreter Interpreter, arguments []any) (any, error) {
-	newInterpreter := NewInterpreter()
-	newInterpreter.environment.WithParent(l.closure)
+	env := NewChildEnvironment(l.closure)
+	newInterpreter := NewInterpreterWithEnv(env, interpreter.exprToDepth)
 
 	for i, param := range l.declaration.Parameters {
 		newInterpreter.environment.Define(param.Lexeme, arguments[i])

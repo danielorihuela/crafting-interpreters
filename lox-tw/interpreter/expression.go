@@ -14,8 +14,14 @@ func (i Interpreter) VisitAssignExpr(expr ast.AssignExpr[any]) (any, error) {
 		return nil, err
 	}
 
-	err = i.environment.Assign(expr.Name, value)
-	if err != nil {
+	if depth, ok := i.exprToDepth[expr]; ok {
+		if err = i.environment.AssignAt(depth, expr.Name, value); err != nil {
+			return nil, err
+		}
+		return value, nil
+	}
+
+	if err = i.environment.AssignGlobal(expr.Name, value); err != nil {
 		return nil, err
 	}
 
@@ -32,12 +38,7 @@ func (i Interpreter) VisitTernaryExpr(expr ast.TernaryExpr[any]) (any, error) {
 		return conditionValue, err
 	}
 
-	if conditionValue == nil {
-		return expr.FalseExpr.Accept(i)
-	}
-
-	value, ok := conditionValue.(bool)
-	if ok && !value {
+	if value, ok := conditionValue.(bool); ok && !value {
 		return expr.FalseExpr.Accept(i)
 	}
 
@@ -59,8 +60,7 @@ func (i Interpreter) VisitBinaryExpr(expr ast.BinaryExpr[any]) (any, error) {
 	case token.COMMA:
 		return rightValue, nil
 	case token.PLUS:
-		result, err := computeOpFloats(leftValue, rightValue, expr.Operator)
-		if err == nil {
+		if result, err := computeOpFloats(leftValue, rightValue, expr.Operator); err == nil {
 			return result, nil
 		}
 
@@ -143,8 +143,7 @@ func (i Interpreter) VisitUnaryExpr(expr ast.UnaryExpr[any]) (any, error) {
 		}
 		return -parsedValue, nil
 	case token.BANG:
-		parsedValue := utils.IsTruthy(rightValue)
-		return !parsedValue, nil
+		return !utils.IsTruthy(rightValue), nil
 	}
 
 	return nil, nil
@@ -210,4 +209,12 @@ func (i Interpreter) VisitCallExpr(expr ast.CallExpr[any]) (any, error) {
 
 func (i Interpreter) VisitLambdaExpr(expr ast.LambdaExpr[any]) (any, error) {
 	return NewLambda(expr, i.environment), nil
+}
+
+func (i Interpreter) VisitVarExpr(expr ast.VarExpr[any]) (any, error) {
+	if depth, ok := i.exprToDepth[expr]; ok {
+		return i.environment.GetAt(depth, expr.Name)
+	}
+
+	return i.environment.GetGlobal(expr.Name)
 }
