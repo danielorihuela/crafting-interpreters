@@ -21,7 +21,8 @@ nix run .#test
 program               → declaration* EOF
 
 # Declarations
-declaration           → functionDeclaration | variableDeclaration | statement
+declaration           → classDeclaration | functionDeclaration | variableDeclaration | statement
+classDeclaration      → "class" IDENTIFIER "{" function* "}"
 functionDeclaration   → "fun" function
 function              → IDENTIFIER "(" parameters? ")" block
 parameters            → IDENTIFIER ( "," IDENTIFIER )*
@@ -40,7 +41,7 @@ returnStatement       → "return" expression? ";"
 
 # Expressions
 expression            → assignment
-assignment            → IDENTIFIER "=" assignment | comma
+assignment            → (call ".")? IDENTIFIER "=" assignment | comma
 comma                 → ternary ( "," ternary )*
 ternary               → logic_or "?" expression ":" expression
 logic_or              → logic_and ( "or" logic_and )*
@@ -50,7 +51,7 @@ comparison            → term ( ( ">" | ">=" | "<" | "<=" ) term )*
 term                  → factor ( ( "-" | "+" ) factor )*
 factor                → unary ( ( "/" | "*" ) unary )*
 unary                 → ( "!" | "-" ) unary | call
-call                  → primary ( "(" arguments? ")" )*
+call                  → primary ( "(" arguments? ")" | "." IDENTIFIER )*
 arguments             → expression ( "," expression )*
 primary               → NUMBER | STRING | "true" | "false" | "nil" | "(" expression ")" | IDENTIFIER | lambda
 lambda                → "fun (" parameters? ")" block

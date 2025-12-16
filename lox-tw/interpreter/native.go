@@ -21,18 +21,20 @@ func (c Clock) String() string {
 }
 
 type Function struct {
-	declaration ast.FunctionStmt[any]
-	closure     *Environment
+	declaration   ast.FunctionStmt[any]
+	closure       *Environment
+	isInitializer bool
 }
 
 func (f Function) String() string {
 	return "<fn " + f.declaration.Name.Lexeme + ">"
 }
 
-func NewFunction(function ast.FunctionStmt[any], closure *Environment) *Function {
+func NewFunction(function ast.FunctionStmt[any], closure *Environment, isInitializer bool) *Function {
 	return &Function{
-		declaration: function,
-		closure:     closure,
+		declaration:   function,
+		closure:       closure,
+		isInitializer: isInitializer,
 	}
 }
 
@@ -51,12 +53,25 @@ func (f *Function) Call(interpreter Interpreter, arguments []any) (any, error) {
 	err := executeBlock(f.declaration.Body, newInterpreter)
 	switch err := err.(type) {
 	case *ReturnError:
+		if f.isInitializer {
+			return f.closure.GetAtByLexeme(0, "this")
+		}
+
 		return err.Value, nil
 	default:
+		if f.isInitializer {
+			return f.closure.GetAtByLexeme(0, "this")
+		}
 		return nil, err
 	}
 
 	return nil, nil
+}
+
+func (f *Function) Bind(instance *Instance) *Function {
+	env := NewChildEnvironment(f.closure)
+	env.Define("this", instance)
+	return NewFunction(f.declaration, env, f.isInitializer)
 }
 
 func executeBlock(statements []ast.Stmt[any], interpreter *Interpreter) error {

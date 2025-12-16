@@ -12,6 +12,9 @@ type ExprVisitor[T any] interface {
 	VisitBinaryExpr(expr BinaryExpr[T]) (T, error)
 	VisitUnaryExpr(expr UnaryExpr[T]) (T, error)
 	VisitCallExpr(expr CallExpr[T]) (T, error)
+	VisitGetExpr(expr GetExpr[T]) (T, error)
+	VisitSetExpr(expr SetExpr[T]) (T, error)
+	VisitThisExpr(expr ThisExpr[T]) (T, error)
 	VisitLogicalExpr(expr LogicalExpr[T]) (T, error)
 	VisitLiteralExpr(expr LiteralExpr[T]) (T, error)
 	VisitNothingExpr(expr NothingExpr[T]) (T, error)
@@ -65,6 +68,33 @@ type CallExpr[T any] struct {
 
 func (e CallExpr[T]) Accept(visitor ExprVisitor[T]) (T, error) {
 	return visitor.VisitCallExpr(e)
+}
+
+type GetExpr[T any] struct {
+	Object Expr[T]
+	Name   token.Token
+}
+
+func (e GetExpr[T]) Accept(visitor ExprVisitor[T]) (T, error) {
+	return visitor.VisitGetExpr(e)
+}
+
+type SetExpr[T any] struct {
+	Object Expr[T]
+	Name   token.Token
+	Value  Expr[T]
+}
+
+func (e SetExpr[T]) Accept(visitor ExprVisitor[T]) (T, error) {
+	return visitor.VisitSetExpr(e)
+}
+
+type ThisExpr[T any] struct {
+	Keyword token.Token
+}
+
+func (e ThisExpr[T]) Accept(visitor ExprVisitor[T]) (T, error) {
+	return visitor.VisitThisExpr(e)
 }
 
 type LogicalExpr[T any] struct {

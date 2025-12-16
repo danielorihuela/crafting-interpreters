@@ -15,6 +15,8 @@ func parseDeclarationInner(tokens []token.Token, start int, depth int) (ast.Stmt
 	var err error
 	if tokens[start].Type == token.VAR {
 		stmt, end, err = parseVarDeclaration(tokens, start+1)
+	} else if tokens[start].Type == token.CLASS && tokens[start+1].Type == token.IDENTIFIER {
+		stmt, end, err = parseClassDeclaration(tokens, start+1)
 	} else if tokens[start].Type == token.FUN && tokens[start+1].Type == token.IDENTIFIER {
 		stmt, end, err = parseFunctionDeclaration("function", tokens, start+1)
 	} else {
@@ -26,6 +28,48 @@ func parseDeclarationInner(tokens []token.Token, start int, depth int) (ast.Stmt
 	}
 
 	return stmt, end, err
+}
+
+func parseClassDeclaration(tokens []token.Token, start int) (ast.Stmt[any], int, error) {
+	pos := start
+
+	if tokens[start].Type != token.IDENTIFIER {
+		return nil, start, &ParserError{
+			Token:   tokens[start],
+			Message: "Expect class name.",
+		}
+	}
+	name := tokens[start]
+	pos += 1
+
+	if tokens[pos].Type != token.LEFT_BRACE {
+		return nil, pos, &ParserError{
+			Token:   tokens[pos],
+			Message: "Expect '{' before class body.",
+		}
+	}
+	pos += 1
+
+	var methods []ast.FunctionStmt[any]
+	for tokens[pos].Type != token.RIGHT_BRACE && tokens[pos].Type != token.EOF {
+		method, end, err := parseFunctionDeclaration("method", tokens, pos)
+		if err != nil {
+			return nil, end, err
+		}
+
+		methods = append(methods, method.(ast.FunctionStmt[any]))
+		pos = end
+	}
+
+	if tokens[pos].Type != token.RIGHT_BRACE {
+		return nil, pos, &ParserError{
+			Token:   tokens[pos],
+			Message: "Expected '}' after class body.",
+		}
+	}
+	pos += 1
+
+	return ast.ClassStmt[any]{Name: name, Methods: methods}, pos, nil
 }
 
 func parseFunctionDeclaration(kind string, tokens []token.Token, start int) (ast.Stmt[any], int, error) {

@@ -10,11 +10,21 @@ type FunctionType uint8
 const (
 	NONE FunctionType = iota
 	FUNCTION
+	INITIALIZER
+	METHOD
+)
+
+type ClassType uint8
+
+const (
+	NONE_CLASS ClassType = iota
+	CLASS
 )
 
 type Resolver struct {
 	scopes          []map[string]bool
 	currentFunction FunctionType
+	currentClass    ClassType
 	ExprToDepth     map[ast.Expr[any]]int
 }
 
@@ -52,12 +62,16 @@ func (r *Resolver) declare(name token.Token) error {
 }
 
 func (r *Resolver) define(name token.Token) {
+	r.defineByLexeme(name.Lexeme)
+}
+
+func (r *Resolver) defineByLexeme(name string) {
 	if len(r.scopes) == 0 {
 		return
 	}
 
 	scope := r.scopes[len(r.scopes)-1]
-	scope[name.Lexeme] = true
+	scope[name] = true
 }
 
 func (r *Resolver) resolveLocal(expr ast.Expr[any], name token.Token) {

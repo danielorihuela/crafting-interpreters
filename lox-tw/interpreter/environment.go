@@ -48,7 +48,11 @@ func (env *Environment) Get(name token.Token) (any, error) {
 }
 
 func (env *Environment) GetAt(distance int, name token.Token) (any, error) {
-	return env.ancestor(distance).variables[name.Lexeme], nil
+	return env.GetAtByLexeme(distance, name.Lexeme)
+}
+
+func (env *Environment) GetAtByLexeme(distance int, name string) (any, error) {
+	return env.ancestor(distance).variables[name], nil
 }
 
 func (env *Environment) ancestor(distance int) *Environment {

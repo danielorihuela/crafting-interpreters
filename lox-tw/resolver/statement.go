@@ -59,6 +59,34 @@ func (r *Resolver) VisitPrintStmt(stmt ast.PrintStmt[any]) error {
 	return err
 }
 
+func (r *Resolver) VisitClassStmt(stmt ast.ClassStmt[any]) error {
+	enclosingClass := r.currentClass
+	r.currentClass = CLASS
+
+	if err := r.declare(stmt.Name); err != nil {
+		return err
+	}
+	r.define(stmt.Name)
+
+	r.beginScope()
+	r.defineByLexeme("this")
+	for _, method := range stmt.Methods {
+		declaration := METHOD
+		if method.Name.Lexeme == "init" {
+			declaration = INITIALIZER
+		}
+		err := r.resolveFunction(method, declaration)
+		if err != nil {
+			return err
+		}
+	}
+	r.endScope()
+
+	r.currentClass = enclosingClass
+
+	return nil
+}
+
 func (r *Resolver) VisitBlockStmt(stmt ast.BlockStmt[any]) error {
 	r.beginScope()
 	for _, statement := range stmt.Statements {
@@ -117,6 +145,13 @@ func (r *Resolver) VisitReturnStmt(stmt ast.ReturnStmt[any]) error {
 	}
 
 	if stmt.Value != nil {
+		if r.currentFunction == INITIALIZER {
+			return &ResolverError{
+				Token:   stmt.Keyword,
+				Message: "Can't return a value from an initializer.",
+			}
+		}
+
 		if _, err := stmt.Value.Accept(r); err != nil {
 			return err
 		}

@@ -12,6 +12,7 @@ type StmtVisitor[T any] interface {
 	VisitIfStmt(stmt IfStmt[T]) error
 	VisitWhileStmt(stmt WhileStmt[T]) error
 	VisitPrintStmt(stmt PrintStmt[T]) error
+	VisitClassStmt(stmt ClassStmt[T]) error
 	VisitBlockStmt(stmt BlockStmt[T]) error
 	VisitBreakStmt(stmt BreakStmt[T]) error
 	VisitFunctionStmt(stmt FunctionStmt[T]) error
@@ -60,6 +61,15 @@ type PrintStmt[T any] struct {
 
 func (e PrintStmt[T]) Accept(visitor StmtVisitor[T]) error {
 	return visitor.VisitPrintStmt(e)
+}
+
+type ClassStmt[T any] struct {
+	Name    token.Token
+	Methods []FunctionStmt[T]
+}
+
+func (e ClassStmt[T]) Accept(visitor StmtVisitor[T]) error {
+	return visitor.VisitClassStmt(e)
 }
 
 type BlockStmt[T any] struct {

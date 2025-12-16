@@ -117,3 +117,32 @@ func (r *Resolver) VisitVarExpr(expr ast.VarExpr[any]) (any, error) {
 
 	return nil, nil
 }
+
+func (r *Resolver) VisitGetExpr(expr ast.GetExpr[any]) (any, error) {
+	return expr.Object.Accept(r)
+}
+
+func (r *Resolver) VisitSetExpr(expr ast.SetExpr[any]) (any, error) {
+	if _, err := expr.Object.Accept(r); err != nil {
+		return nil, err
+	}
+
+	if _, err := expr.Value.Accept(r); err != nil {
+		return nil, err
+	}
+
+	return nil, nil
+}
+
+func (r *Resolver) VisitThisExpr(expr ast.ThisExpr[any]) (any, error) {
+	if r.currentClass == NONE_CLASS {
+		return nil, &ResolverError{
+			Token:   expr.Keyword,
+			Message: "Can't use 'this' outside of a class.",
+		}
+	}
+
+	r.resolveLocal(expr, expr.Keyword)
+
+	return nil, nil
+}

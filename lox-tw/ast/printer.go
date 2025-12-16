@@ -85,3 +85,18 @@ func (p AnyPrinter) VisitLambdaExpr(expr LambdaExpr[any]) (any, error) {
 	}
 	return fmt.Sprintf("(lambda (%s) {\n%s\n})", strings.Join(parameters, " "), strings.Join(bodyStrings, "\n")), nil
 }
+
+func (p AnyPrinter) VisitGetExpr(expr GetExpr[any]) (any, error) {
+	object, _ := expr.Object.Accept(p)
+	return fmt.Sprintf("(%s.%s)", object, expr.Name.Lexeme), nil
+}
+
+func (p AnyPrinter) VisitSetExpr(expr SetExpr[any]) (any, error) {
+	object, _ := expr.Object.Accept(p)
+	value, _ := expr.Value.Accept(p)
+	return fmt.Sprintf("(%s.%s = %s)", object, expr.Name.Lexeme, value), nil
+}
+
+func (p AnyPrinter) VisitThisExpr(expr ThisExpr[any]) (any, error) {
+	return "this", nil
+}

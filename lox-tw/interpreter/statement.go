@@ -81,6 +81,20 @@ func (i Interpreter) VisitPrintStmt(stmt ast.PrintStmt[any]) error {
 	return nil
 }
 
+func (i Interpreter) VisitClassStmt(stmt ast.ClassStmt[any]) error {
+	i.environment.Define(stmt.Name.Lexeme, nil)
+
+	methods := make(map[string]*Function)
+	for _, method := range stmt.Methods {
+		methods[method.Name.Lexeme] = NewFunction(method, i.environment, method.Name.Lexeme == "init")
+	}
+
+	class := NewClass(stmt.Name.Lexeme, methods)
+	i.environment.Assign(stmt.Name, class)
+
+	return nil
+}
+
 func (i Interpreter) VisitBlockStmt(stmt ast.BlockStmt[any]) error {
 	parentEnv := i.environment
 	i.environment = NewChildEnvironment(parentEnv)
@@ -100,7 +114,7 @@ func (i Interpreter) VisitBreakStmt(stmt ast.BreakStmt[any]) error {
 }
 
 func (i Interpreter) VisitFunctionStmt(stmt ast.FunctionStmt[any]) error {
-	function := NewFunction(stmt, i.environment)
+	function := NewFunction(stmt, i.environment, false)
 	i.environment.Define(stmt.Name.Lexeme, function)
 	return nil
 }

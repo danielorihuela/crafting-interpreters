@@ -218,3 +218,52 @@ func (i Interpreter) VisitVarExpr(expr ast.VarExpr[any]) (any, error) {
 
 	return i.environment.GetGlobal(expr.Name)
 }
+
+func (i Interpreter) VisitGetExpr(expr ast.GetExpr[any]) (any, error) {
+	object, err := expr.Object.Accept(i)
+	if err != nil {
+		return nil, err
+	}
+
+	instance, ok := object.(*Instance)
+	if !ok {
+		return nil, &RuntimeError{
+			Token:   expr.Name,
+			Message: "Only instances have properties.",
+		}
+	}
+
+	return instance.Get(expr.Name)
+}
+
+func (i Interpreter) VisitSetExpr(expr ast.SetExpr[any]) (any, error) {
+	object, err := expr.Object.Accept(i)
+	if err != nil {
+		return nil, err
+	}
+
+	instance, ok := object.(*Instance)
+	if !ok {
+		return nil, &RuntimeError{
+			Token:   expr.Name,
+			Message: "Only instances have fields.",
+		}
+	}
+
+	value, err := expr.Value.Accept(i)
+	if err != nil {
+		return nil, err
+	}
+
+	instance.Set(expr.Name, value)
+
+	return value, nil
+}
+
+func (i Interpreter) VisitThisExpr(expr ast.ThisExpr[any]) (any, error) {
+	if depth, ok := i.exprToDepth[expr]; ok {
+		return i.environment.GetAt(depth, expr.Keyword)
+	}
+
+	return i.environment.GetGlobal(expr.Keyword)
+}

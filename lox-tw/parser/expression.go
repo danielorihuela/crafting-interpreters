@@ -28,6 +28,10 @@ func parseAssign(tokens []token.Token, start int) (ast.Expr[any], int, error) {
 		return assign, endAssign, err
 	}
 
+	if v, ok := comma.(ast.GetExpr[any]); ok {
+		return ast.SetExpr[any]{Object: v.Object, Name: v.Name, Value: assign}, endAssign, nil
+	}
+
 	v, ok := comma.(ast.VarExpr[any])
 	if !ok {
 		return comma, endAssign, &ParserError{
@@ -110,13 +114,22 @@ func parseCall(tokens []token.Token, start int) (ast.Expr[any], int, error) {
 
 	pos := end
 	for {
-		if tokens[pos].Type != token.LEFT_PAREN {
+		if tokens[pos].Type == token.LEFT_PAREN {
+			callee, end, err = finishCall(callee, tokens, pos+1)
+			if err != nil {
+				return callee, end, err
+			}
+		} else if tokens[pos].Type == token.DOT {
+			if tokens[pos+1].Type != token.IDENTIFIER {
+				return nil, pos + 1, &ParserError{
+					Token:   tokens[pos+1],
+					Message: "Expect property name after '.'.",
+				}
+			}
+			callee = ast.GetExpr[any]{Object: callee, Name: tokens[pos+1]}
+			end = pos + 2
+		} else {
 			break
-		}
-
-		callee, end, err = finishCall(callee, tokens, pos+1)
-		if err != nil {
-			return callee, end, err
 		}
 		pos = end
 	}
@@ -132,6 +145,8 @@ func parsePrimary(tokens []token.Token, start int) (ast.Expr[any], int, error) {
 		return ast.LiteralExpr[any]{Value: true}, start + 1, nil
 	case token.FALSE:
 		return ast.LiteralExpr[any]{Value: false}, start + 1, nil
+	case token.THIS:
+		return ast.ThisExpr[any]{Keyword: tokens[start]}, start + 1, nil
 	case token.LEFT_PAREN:
 		expr, end, err := parseExpression(tokens, start+1)
 		if err != nil {

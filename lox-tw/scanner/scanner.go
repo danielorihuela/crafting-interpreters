@@ -155,7 +155,7 @@ func scanDecimal(source string, start uint, line uint) token.Token {
 	}
 
 	if !allCharactersParsed(source, position) && source[position] == '.' {
-		if !allCharactersParsed(source, position) && isDigit(source[position+1]) {
+		if !allCharactersParsed(source, position + 1) && isDigit(source[position+1]) {
 			position += 1
 		}
 
