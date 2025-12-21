@@ -80,6 +80,12 @@ func (r *Resolver) VisitClassStmt(stmt ast.ClassStmt[any]) error {
 			return err
 		}
 	}
+	for _, globalMethod := range stmt.GlobalMethods {
+		err := r.resolveFunction(globalMethod, METHOD)
+		if err != nil {
+			return err
+		}
+	}
 	r.endScope()
 
 	r.currentClass = enclosingClass

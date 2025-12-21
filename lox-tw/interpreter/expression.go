@@ -2,6 +2,7 @@ package interpreter
 
 import (
 	"fmt"
+	"os"
 
 	"lox-tw/ast"
 	"lox-tw/token"
@@ -225,15 +226,20 @@ func (i Interpreter) VisitGetExpr(expr ast.GetExpr[any]) (any, error) {
 		return nil, err
 	}
 
-	instance, ok := object.(*Instance)
-	if !ok {
-		return nil, &RuntimeError{
-			Token:   expr.Name,
-			Message: "Only instances have properties.",
+	if instance, ok := object.(*Instance); ok {
+		return instance.Get(expr.Name)
+	}
+
+	if os.Getenv("METACLASSES_ENABLED") == "true" {
+		if classInstance, ok := object.(*Class); ok && classInstance.instance != nil {
+			return classInstance.instance.Get(expr.Name)
 		}
 	}
 
-	return instance.Get(expr.Name)
+	return nil, &RuntimeError{
+		Token:   expr.Name,
+		Message: "Only instances have properties.",
+	}
 }
 
 func (i Interpreter) VisitSetExpr(expr ast.SetExpr[any]) (any, error) {

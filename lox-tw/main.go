@@ -72,6 +72,8 @@ func runPrompt() {
 }
 
 func run(source string) error {
+	os.Setenv("METACLASSES_ENABLED", "false")
+
 	chapter := os.Getenv("CHAPTER")
 	switch chapter {
 	case "4":
@@ -91,7 +93,7 @@ func run(source string) error {
 	case "12":
 		return chapter_12_run(source)
 	default:
-		return chapter_12_run(source)
+		return chapter_12_extra(source)
 	}
 
 	return nil
@@ -241,4 +243,9 @@ func chapter_11_run(source string) error {
 
 func chapter_12_run(source string) error {
 	return chapter_11_run(source)
+}
+
+func chapter_12_extra(source string) error {
+	os.Setenv("METACLASSES_ENABLED", "true")
+	return chapter_12_run(source)
 }

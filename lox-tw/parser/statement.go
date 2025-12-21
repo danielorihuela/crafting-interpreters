@@ -51,14 +51,25 @@ func parseClassDeclaration(tokens []token.Token, start int) (ast.Stmt[any], int,
 	pos += 1
 
 	var methods []ast.FunctionStmt[any]
+	var globalMethods []ast.FunctionStmt[any]
 	for tokens[pos].Type != token.RIGHT_BRACE && tokens[pos].Type != token.EOF {
-		method, end, err := parseFunctionDeclaration("method", tokens, pos)
-		if err != nil {
-			return nil, end, err
-		}
+		if tokens[pos].Type == token.CLASS {
+			method, end, err := parseFunctionDeclaration("method", tokens, pos+1)
+			if err != nil {
+				return nil, end, err
+			}
 
-		methods = append(methods, method.(ast.FunctionStmt[any]))
-		pos = end
+			globalMethods = append(globalMethods, method.(ast.FunctionStmt[any]))
+			pos = end
+		} else {
+			method, end, err := parseFunctionDeclaration("method", tokens, pos)
+			if err != nil {
+				return nil, end, err
+			}
+
+			methods = append(methods, method.(ast.FunctionStmt[any]))
+			pos = end
+		}
 	}
 
 	if tokens[pos].Type != token.RIGHT_BRACE {
@@ -69,7 +80,7 @@ func parseClassDeclaration(tokens []token.Token, start int) (ast.Stmt[any], int,
 	}
 	pos += 1
 
-	return ast.ClassStmt[any]{Name: name, Methods: methods}, pos, nil
+	return ast.ClassStmt[any]{Name: name, Methods: methods, GlobalMethods: globalMethods}, pos, nil
 }
 
 func parseFunctionDeclaration(kind string, tokens []token.Token, start int) (ast.Stmt[any], int, error) {

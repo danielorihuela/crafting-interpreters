@@ -84,12 +84,18 @@ func (i Interpreter) VisitPrintStmt(stmt ast.PrintStmt[any]) error {
 func (i Interpreter) VisitClassStmt(stmt ast.ClassStmt[any]) error {
 	i.environment.Define(stmt.Name.Lexeme, nil)
 
+	globalMethods := make(map[string]*Function)
+	for _, method := range stmt.GlobalMethods {
+		globalMethods[method.Name.Lexeme] = NewFunction(method, i.environment, false)
+	}
+	metaclass := NewClass(nil, stmt.Name.Lexeme+" metaclass", globalMethods)
+
 	methods := make(map[string]*Function)
 	for _, method := range stmt.Methods {
 		methods[method.Name.Lexeme] = NewFunction(method, i.environment, method.Name.Lexeme == "init")
 	}
+	class := NewClass(metaclass, stmt.Name.Lexeme, methods)
 
-	class := NewClass(stmt.Name.Lexeme, methods)
 	i.environment.Assign(stmt.Name, class)
 
 	return nil

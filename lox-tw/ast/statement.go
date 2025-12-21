@@ -64,8 +64,9 @@ func (e PrintStmt[T]) Accept(visitor StmtVisitor[T]) error {
 }
 
 type ClassStmt[T any] struct {
-	Name    token.Token
-	Methods []FunctionStmt[T]
+	Name          token.Token
+	Methods       []FunctionStmt[T]
+	GlobalMethods []FunctionStmt[T]
 }
 
 func (e ClassStmt[T]) Accept(visitor StmtVisitor[T]) error {

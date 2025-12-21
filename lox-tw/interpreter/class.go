@@ -3,10 +3,16 @@ package interpreter
 type Class struct {
 	Name    string
 	Methods map[string]*Function
+
+	// metaclasses
+	instance *Instance
 }
 
-func NewClass(name string, methods map[string]*Function) *Class {
-	return &Class{Name: name, Methods: methods}
+func NewClass(metaclass *Class, name string, methods map[string]*Function) *Class {
+	class := &Class{Name: name, Methods: methods, instance: nil}
+	class.instance = NewInstance(metaclass)
+
+	return class
 }
 
 func (c *Class) FindMethod(name string) *Function {
