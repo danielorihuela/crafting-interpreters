@@ -68,6 +68,21 @@ func (r *Resolver) VisitClassStmt(stmt ast.ClassStmt[any]) error {
 	}
 	r.define(stmt.Name)
 
+	if stmt.Superclass != nil && stmt.Superclass.Name.Lexeme == stmt.Name.Lexeme {
+		return &ResolverError{
+			Token:   stmt.Superclass.Name,
+			Message: "A class can't inherit from itself.",
+		}
+	}
+
+	if stmt.Superclass != nil {
+		r.currentClass = SUBCLASS
+		stmt.Superclass.Accept(r)
+
+		r.beginScope()
+		r.defineByLexeme("super")
+	}
+
 	r.beginScope()
 	r.defineByLexeme("this")
 	for _, method := range stmt.Methods {
@@ -87,6 +102,10 @@ func (r *Resolver) VisitClassStmt(stmt ast.ClassStmt[any]) error {
 		}
 	}
 	r.endScope()
+
+	if stmt.Superclass != nil {
+		r.endScope()
+	}
 
 	r.currentClass = enclosingClass
 

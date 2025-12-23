@@ -146,3 +146,20 @@ func (r *Resolver) VisitThisExpr(expr ast.ThisExpr[any]) (any, error) {
 
 	return nil, nil
 }
+
+func (r *Resolver) VisitSuperExpr(expr ast.SuperExpr[any]) (any, error) {
+	if r.currentClass == NONE_CLASS {
+		return nil, &ResolverError{
+			Token:   expr.Keyword,
+			Message: "Can't use 'super' outside of a class.",
+		}
+	} else if r.currentClass != SUBCLASS {
+		return nil, &ResolverError{
+			Token:   expr.Keyword,
+			Message: "Can't use 'super' in a class with no superclass.",
+		}
+	}
+
+	r.resolveLocal(expr, expr.Keyword)
+	return nil, nil
+}

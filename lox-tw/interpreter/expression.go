@@ -273,3 +273,49 @@ func (i Interpreter) VisitThisExpr(expr ast.ThisExpr[any]) (any, error) {
 
 	return i.environment.GetGlobal(expr.Keyword)
 }
+
+func (i Interpreter) VisitSuperExpr(expr ast.SuperExpr[any]) (any, error) {
+	depth, ok := i.exprToDepth[expr]
+	if !ok {
+		return nil, &RuntimeError{
+			Token:   expr.Keyword,
+			Message: "Undefined 'super' reference.",
+		}
+	}
+
+	superclassValue, err := i.environment.GetAt(depth, expr.Keyword)
+	if err != nil {
+		return nil, err
+	}
+
+	superclass, ok := superclassValue.(*Class)
+	if !ok {
+		return nil, &RuntimeError{
+			Token:   expr.Keyword,
+			Message: "Superclass must be a class.",
+		}
+	}
+
+	objectValue, err := i.environment.GetAtByLexeme(depth-1, "this")
+	if err != nil {
+		return nil, err
+	}
+
+	object, ok := objectValue.(*Instance)
+	if !ok {
+		return nil, &RuntimeError{
+			Token:   expr.Keyword,
+			Message: "Invalid 'this' reference.",
+		}
+	}
+
+	method := superclass.FindMethod(expr.Method.Lexeme)
+	if method == nil {
+		return nil, &RuntimeError{
+			Token:   expr.Method,
+			Message: fmt.Sprintf("Undefined property '%s'.", expr.Method.Lexeme),
+		}
+	}
+
+	return method.Bind(object), nil
+}

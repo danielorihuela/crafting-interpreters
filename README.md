@@ -22,7 +22,7 @@ program               → declaration* EOF
 
 # Declarations
 declaration           → classDeclaration | functionDeclaration | variableDeclaration | statement
-classDeclaration      → "class" IDENTIFIER "{" function* "}"
+classDeclaration      → "class" IDENTIFIER ( "<" IDENTIFIER )? "{" function* "}"
 functionDeclaration   → "fun" function
 function              → IDENTIFIER "(" parameters? ")" block
 parameters            → IDENTIFIER ( "," IDENTIFIER )*
@@ -53,6 +53,6 @@ factor                → unary ( ( "/" | "*" ) unary )*
 unary                 → ( "!" | "-" ) unary | call
 call                  → primary ( "(" arguments? ")" | "." IDENTIFIER )*
 arguments             → expression ( "," expression )*
-primary               → NUMBER | STRING | "true" | "false" | "nil" | "(" expression ")" | IDENTIFIER | lambda
+primary               → NUMBER | STRING | "true" | "false" | "nil" | "(" expression ")" | IDENTIFIER | lambda | "super" "." IDENTIFIER
 lambda                → "fun (" parameters? ")" block
 ```

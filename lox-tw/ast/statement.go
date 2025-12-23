@@ -65,6 +65,7 @@ func (e PrintStmt[T]) Accept(visitor StmtVisitor[T]) error {
 
 type ClassStmt[T any] struct {
 	Name          token.Token
+	Superclass    *VarExpr[T]
 	Methods       []FunctionStmt[T]
 	GlobalMethods []FunctionStmt[T]
 }

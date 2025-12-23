@@ -17,6 +17,7 @@ type ExprVisitor[T any] interface {
 	VisitThisExpr(expr ThisExpr[T]) (T, error)
 	VisitLogicalExpr(expr LogicalExpr[T]) (T, error)
 	VisitLiteralExpr(expr LiteralExpr[T]) (T, error)
+	VisitSuperExpr(expr SuperExpr[T]) (T, error)
 	VisitNothingExpr(expr NothingExpr[T]) (T, error)
 	VisitVarExpr(expr VarExpr[T]) (T, error)
 	VisitAssignExpr(expr AssignExpr[T]) (T, error)
@@ -113,6 +114,15 @@ type LiteralExpr[T any] struct {
 
 func (e LiteralExpr[T]) Accept(visitor ExprVisitor[T]) (T, error) {
 	return visitor.VisitLiteralExpr(e)
+}
+
+type SuperExpr[T any] struct {
+	Keyword token.Token
+	Method  token.Token
+}
+
+func (e SuperExpr[T]) Accept(visitor ExprVisitor[T]) (T, error) {
+	return visitor.VisitSuperExpr(e)
 }
 
 type NothingExpr[T any] struct {

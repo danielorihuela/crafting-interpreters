@@ -39,6 +39,7 @@ func main() {
 			{"This", []Field{{"Keyword", "token.Token"}}},
 			{"Logical", []Field{{"Left", "Expr[T]"}, {"Operator", "token.Token"}, {"Right", "Expr[T]"}}},
 			{"Literal", []Field{{"Value", "any"}}},
+			{"Super", []Field{{"Keyword", "token.Token"}, {"Method", "token.Token"}}},
 			{"Nothing", nil},
 
 			{"Var", []Field{{"Name", "token.Token"}}},

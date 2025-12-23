@@ -163,6 +163,20 @@ func parsePrimary(tokens []token.Token, start int) (ast.Expr[any], int, error) {
 		return ast.GroupingExpr[any]{Expression: expr}, end + 1, nil
 	case token.IDENTIFIER:
 		return ast.VarExpr[any]{Name: tokens[start]}, start + 1, nil
+	case token.SUPER:
+		if tokens[start+1].Type != token.DOT {
+			return nil, start + 1, &ParserError{
+				Token:   tokens[start+1],
+				Message: "Expect '.' after 'super'.",
+			}
+		}
+		if tokens[start+2].Type != token.IDENTIFIER {
+			return nil, start + 2, &ParserError{
+				Token:   tokens[start+2],
+				Message: "Expect superclass method name.",
+			}
+		}
+		return ast.SuperExpr[any]{Keyword: tokens[start], Method: tokens[start+2]}, start + 3, nil
 	default:
 		if tokens[start].Type == token.FUN && tokens[start+1].Type != token.IDENTIFIER {
 			parameters, body, end, err := parseFunctionHelper("lambda", tokens, start+1)

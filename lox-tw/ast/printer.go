@@ -100,3 +100,7 @@ func (p AnyPrinter) VisitSetExpr(expr SetExpr[any]) (any, error) {
 func (p AnyPrinter) VisitThisExpr(expr ThisExpr[any]) (any, error) {
 	return "this", nil
 }
+
+func (p AnyPrinter) VisitSuperExpr(expr SuperExpr[any]) (any, error) {
+	return "super", nil
+}

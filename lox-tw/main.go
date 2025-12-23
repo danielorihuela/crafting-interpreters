@@ -14,6 +14,7 @@ import (
 )
 
 var RUNTIME_ERROR = false
+var RESOLVER_ERROR = false
 
 func main() {
 	arguments := os.Args[1:]
@@ -41,7 +42,9 @@ func runFile(path string) {
 		os.Exit(65)
 	case *parser.ParserError:
 		os.Exit(65)
-	case *resolver.ResolverError:
+	}
+
+	if RESOLVER_ERROR {
 		os.Exit(65)
 	}
 
@@ -92,8 +95,12 @@ func run(source string) error {
 		return chapter_11_run(source)
 	case "12":
 		return chapter_12_run(source)
-	default:
+	case "12extra":
 		return chapter_12_extra(source)
+	case "13":
+		return chapter_13_run(source)
+	default:
+		return chapter_13_run(source)
 	}
 
 	return nil
@@ -222,8 +229,12 @@ func chapter_11_run(source string) error {
 		err := stmt.Accept(codeResolver)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%v\n", err)
-			return err
+			RESOLVER_ERROR = true
 		}
+	}
+
+	if RESOLVER_ERROR {
+		return nil
 	}
 
 	codeInterpreter := interpreter.NewInterpreter(codeResolver.ExprToDepth)
@@ -247,5 +258,9 @@ func chapter_12_run(source string) error {
 
 func chapter_12_extra(source string) error {
 	os.Setenv("METACLASSES_ENABLED", "true")
+	return chapter_12_run(source)
+}
+
+func chapter_13_run(source string) error {
 	return chapter_12_run(source)
 }

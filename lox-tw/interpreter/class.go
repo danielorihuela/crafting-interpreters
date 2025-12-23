@@ -1,15 +1,16 @@
 package interpreter
 
 type Class struct {
-	Name    string
-	Methods map[string]*Function
+	Name       string
+	Superclass *Class
+	Methods    map[string]*Function
 
 	// metaclasses
 	instance *Instance
 }
 
-func NewClass(metaclass *Class, name string, methods map[string]*Function) *Class {
-	class := &Class{Name: name, Methods: methods, instance: nil}
+func NewClass(metaclass *Class, name string, superclass *Class, methods map[string]*Function) *Class {
+	class := &Class{Name: name, Methods: methods, instance: nil, Superclass: superclass}
 	class.instance = NewInstance(metaclass)
 
 	return class
@@ -19,6 +20,11 @@ func (c *Class) FindMethod(name string) *Function {
 	if method, ok := c.Methods[name]; ok {
 		return method
 	}
+
+	if c.Superclass != nil {
+		return c.Superclass.FindMethod(name)
+	}
+
 	return nil
 }
 

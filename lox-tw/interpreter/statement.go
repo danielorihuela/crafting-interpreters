@@ -82,19 +82,45 @@ func (i Interpreter) VisitPrintStmt(stmt ast.PrintStmt[any]) error {
 }
 
 func (i Interpreter) VisitClassStmt(stmt ast.ClassStmt[any]) error {
+	var superclass *Class
+	if stmt.Superclass != nil {
+		superclassValue, err := stmt.Superclass.Accept(i)
+		if err != nil {
+			return err
+		}
+
+		var ok bool
+		superclass, ok = superclassValue.(*Class)
+		if !ok {
+			return &RuntimeError{
+				Token:   stmt.Superclass.Name,
+				Message: "Superclass must be a class.",
+			}
+		}
+	}
+
 	i.environment.Define(stmt.Name.Lexeme, nil)
+
+	if superclass != nil {
+		i.environment = NewChildEnvironment(i.environment)
+		i.environment.Define("super", superclass)
+	}
 
 	globalMethods := make(map[string]*Function)
 	for _, method := range stmt.GlobalMethods {
 		globalMethods[method.Name.Lexeme] = NewFunction(method, i.environment, false)
 	}
-	metaclass := NewClass(nil, stmt.Name.Lexeme+" metaclass", globalMethods)
+	metaclass := NewClass(nil, stmt.Name.Lexeme+" metaclass", superclass, globalMethods)
 
 	methods := make(map[string]*Function)
 	for _, method := range stmt.Methods {
 		methods[method.Name.Lexeme] = NewFunction(method, i.environment, method.Name.Lexeme == "init")
 	}
-	class := NewClass(metaclass, stmt.Name.Lexeme, methods)
+	class := NewClass(metaclass, stmt.Name.Lexeme, superclass, methods)
+
+	if superclass != nil {
+		i.environment = i.environment.enclosing
+	}
 
 	i.environment.Assign(stmt.Name, class)
 

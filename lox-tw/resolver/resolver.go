@@ -19,6 +19,7 @@ type ClassType uint8
 const (
 	NONE_CLASS ClassType = iota
 	CLASS
+	SUBCLASS
 )
 
 type Resolver struct {

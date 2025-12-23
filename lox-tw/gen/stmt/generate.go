@@ -34,7 +34,7 @@ func main() {
 			{"If", []Field{{"Condition", "Expr[T]"}, {"ThenBranch", "Stmt[T]"}, {"ElseBranch", "Stmt[T]"}}},
 			{"While", []Field{{"Condition", "Expr[T]"}, {"Body", "Stmt[T]"}}},
 			{"Print", []Field{{"Expression", "Expr[T]"}}},
-			{"Class", []Field{{"Name", "token.Token"}, {"Methods", "[]FunctionStmt[T]"}, {"GlobalMethods", "[]FunctionStmt[T]"}}},
+			{"Class", []Field{{"Name", "token.Token"}, {"Superclass", "*VarExpr[T]"}, {"Methods", "[]FunctionStmt[T]"}, {"GlobalMethods", "[]FunctionStmt[T]"}}},
 			{"Block", []Field{{"Statements", "[]Stmt[T]"}}},
 			{"Break", []Field{}},
 			{"Function", []Field{{"Name", "token.Token"}, {"Parameters", "[]token.Token"}, {"Body", "[]Stmt[T]"}}},

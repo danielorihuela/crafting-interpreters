@@ -42,6 +42,21 @@ func parseClassDeclaration(tokens []token.Token, start int) (ast.Stmt[any], int,
 	name := tokens[start]
 	pos += 1
 
+	var superclass *ast.VarExpr[any]
+	if tokens[pos].Type == token.LESS {
+		pos += 1
+
+		if tokens[pos].Type != token.IDENTIFIER {
+			return nil, pos, &ParserError{
+				Token:   tokens[pos],
+				Message: "Expect superclass name.",
+			}
+		}
+
+		superclass = &ast.VarExpr[any]{Name: tokens[pos]}
+		pos += 1
+	}
+
 	if tokens[pos].Type != token.LEFT_BRACE {
 		return nil, pos, &ParserError{
 			Token:   tokens[pos],
@@ -80,7 +95,7 @@ func parseClassDeclaration(tokens []token.Token, start int) (ast.Stmt[any], int,
 	}
 	pos += 1
 
-	return ast.ClassStmt[any]{Name: name, Methods: methods, GlobalMethods: globalMethods}, pos, nil
+	return ast.ClassStmt[any]{Name: name, Superclass: superclass, Methods: methods, GlobalMethods: globalMethods}, pos, nil
 }
 
 func parseFunctionDeclaration(kind string, tokens []token.Token, start int) (ast.Stmt[any], int, error) {
