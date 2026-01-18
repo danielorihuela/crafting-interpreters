@@ -13,7 +13,7 @@ func (c Clock) Arity() int {
 }
 
 func (c Clock) Call(interpreter Interpreter, arguments []any) (any, error) {
-	return time.Now().UnixMilli(), nil
+	return float64(time.Now().UnixMilli()), nil
 }
 
 func (c Clock) String() string {

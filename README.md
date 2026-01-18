@@ -12,7 +12,7 @@ go run .
 ## Test suite
 
 ```
-nix run .#test
+nix run .#test-lox-tw
 ```
 
 ## Supported Grammar

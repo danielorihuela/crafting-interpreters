@@ -31,7 +31,7 @@
           };
         };
 
-        packages.test = pkgs.writeShellScriptBin "run-loxtw-tests" ''
+        packages.test-lox-tw = pkgs.writeShellScriptBin "run-loxtw-tests" ''
           git=${pkgs.git}/bin/git
           go=${pkgs.go}/bin/go
           dart=${dartPkgs.dart}/bin/dart
