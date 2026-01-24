@@ -29,6 +29,10 @@
               go run ./gen/stmt/generate.go
             '';
           };
+
+          rust = pkgs.mkShell {
+            packages = with pkgs; [ cargo rustc rustfmt clippy ];
+          };
         };
 
         packages.test-lox-tw = pkgs.writeShellScriptBin "run-loxtw-tests" ''
