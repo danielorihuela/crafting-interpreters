@@ -1,4 +1,4 @@
-use crate::dynarray::DynArray;
+use crate::collections::dynarray::DynArray;
 
 pub type Value = f64;
 
@@ -21,6 +21,6 @@ impl Values {
     }
 
     pub fn get_at(&self, pos: usize) -> Value {
-        unsafe { *(self.dyn_array.data as *const Value).add(pos) }
+        *self.dyn_array.get_at(pos)
     }
 }

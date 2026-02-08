@@ -1,37 +1,25 @@
 use crate::{
-    dynarray::DynArray,
-    opcode::OpCode,
+    collections::dynarray::DynArray,
     value::{Value, Values},
 };
 
 #[derive(Default)]
 pub struct Chunk {
-    dyn_array: DynArray<u8>,
-    values: Values,
+    pub code: DynArray<u8>,
+    pub values: Values,
     lines: DynArray<usize>,
 }
 
 impl Chunk {
     pub fn write(&mut self, byte: u8, line: usize) {
-        self.dyn_array.write(byte);
+        self.code.write(byte);
         self.lines.write(line);
     }
 
     pub fn free(&mut self) {
-        self.dyn_array.free();
+        self.code.free();
         self.values.free();
         self.lines.free();
-    }
-
-    pub fn disassemble(&self, name: &str) {
-        #[cfg(debug_assertions)]
-        {
-            println!("== {name} ==");
-            let mut offset = 0;
-            while offset != self.dyn_array.count {
-                offset = disassemble_instruction(self, offset);
-            }
-        }
     }
 
     pub fn add_constant(&mut self, value: Value) -> usize {
@@ -41,41 +29,50 @@ impl Chunk {
 }
 
 #[cfg(debug_assertions)]
-fn disassemble_instruction(chunk: &Chunk, offset: usize) -> usize {
-    use crate::opcode::OpCode;
+pub mod debug {
+    use super::*;
+    use crate::OpCode;
 
-    print!("{offset:04} ");
-    print_line_number(chunk, offset);
+    pub fn disassemble_instruction(chunk: &Chunk, offset: usize) -> usize {
+        use crate::opcode::OpCode;
 
-    let instruction = unsafe { *(chunk.dyn_array.data as *const u8).add(offset) };
-    match OpCode::try_from(instruction) {
-        Ok(opcode) => match opcode {
-            OpCode::OpConstant => {
+        print!("{offset:04} ");
+        print_line_number(chunk, offset);
+
+        let instruction = *chunk.code.get_at(offset);
+        let opcode = OpCode::from(instruction);
+        match opcode {
+            OpCode::Constant => {
                 print_constant_instructions(chunk, offset, opcode);
                 offset + 2
             }
-            OpCode::OpReturn => {
+            OpCode::Add
+            | OpCode::Subtract
+            | OpCode::Multiply
+            | OpCode::Divide
+            | OpCode::Negate
+            | OpCode::Return => {
                 println!("{}", opcode);
                 offset + 1
             }
-        },
-        _ => {
-            println!("Unknown opcode {}", instruction);
-            offset + 1
+            OpCode::Unknown => {
+                println!("Unknown opcode {}", instruction);
+                offset + 1
+            }
         }
     }
-}
 
-fn print_line_number(chunk: &Chunk, offset: usize) {
-    if offset > 0 && unsafe { *chunk.lines.data.add(offset) == *chunk.lines.data.add(offset - 1) } {
-        print!("   | ");
-    } else {
-        print!("{:4} ", unsafe { *chunk.lines.data.add(offset) });
+    fn print_line_number(chunk: &Chunk, offset: usize) {
+        if offset > 0 && *chunk.lines.get_at(offset) == *chunk.lines.get_at(offset - 1) {
+            print!("   | ");
+        } else {
+            print!("{:4} ", *chunk.lines.get_at(offset));
+        }
     }
-}
 
-fn print_constant_instructions(chunk: &Chunk, offset: usize, opcode: OpCode) {
-    let constant = unsafe { *(chunk.dyn_array.data).add(offset + 1) };
-    let value = chunk.values.get_at(constant as usize);
-    println!("{:<16} {constant:4} '{value}'", opcode.to_string());
+    fn print_constant_instructions(chunk: &Chunk, offset: usize, opcode: OpCode) {
+        let constant = unsafe { *(chunk.code.data).add(offset + 1) };
+        let value = chunk.values.get_at(constant as usize);
+        println!("{:<16} {constant:4} '{value}'", opcode.to_string());
+    }
 }

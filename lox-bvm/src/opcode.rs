@@ -1,29 +1,36 @@
 use std::fmt::Display;
 
 #[repr(u8)]
+#[derive(Debug)]
 pub enum OpCode {
-    OpConstant,
-    OpReturn,
+    Constant,
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Negate,
+    Return,
+    Unknown,
 }
 
-impl TryFrom<u8> for OpCode {
-    type Error = ();
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
+impl From<u8> for OpCode {
+    fn from(value: u8) -> Self {
         match value {
-            x if x == OpCode::OpConstant as u8 => Ok(OpCode::OpConstant),
-            x if x == OpCode::OpReturn as u8 => Ok(OpCode::OpReturn),
-            _ => Err(()),
+            0 => OpCode::Constant,
+            1 => OpCode::Add,
+            2 => OpCode::Subtract,
+            3 => OpCode::Multiply,
+            4 => OpCode::Divide,
+            5 => OpCode::Negate,
+            6 => OpCode::Return,
+            _ => OpCode::Unknown,
         }
     }
 }
 
 impl Display for OpCode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let name = match self {
-            OpCode::OpConstant => "OP_CONSTANT",
-            OpCode::OpReturn => "OP_RETURN",
-        };
-        write!(f, "{}", name)
+        let name = format!("{:?}", self).to_ascii_uppercase();
+        write!(f, "OP_{}", name)
     }
 }

@@ -18,7 +18,7 @@ impl<T> Default for DynArray<T> {
 
 impl<T> DynArray<T> {
     pub fn write(&mut self, data: T) {
-        if self.full() {
+        if self.capacity == self.count {
             let old_capacity = self.capacity;
             self.capacity = grow_capacity(old_capacity);
             self.data = grow_array::<T>(self.data, old_capacity, self.capacity);
@@ -33,8 +33,8 @@ impl<T> DynArray<T> {
         *self = Self::default();
     }
 
-    fn full(&self) -> bool {
-        self.capacity == self.count
+    pub fn get_at(&self, pos: usize) -> &T {
+        unsafe { &*self.data.add(pos) }
     }
 }
 
@@ -51,7 +51,7 @@ fn free_array<T>(ptr: *mut T, capacity: usize) {
     let _ = reallocate(ptr, capacity, 0);
 }
 
-fn reallocate<T>(ptr: *mut T, old_capacity: usize, new_capacity: usize) -> *mut T {
+fn reallocate<T>(ptr: *mut T, _old_capacity: usize, new_capacity: usize) -> *mut T {
     let ptr = ptr as *mut u8;
     let layout = Layout::new::<T>();
     if new_capacity == 0 {
