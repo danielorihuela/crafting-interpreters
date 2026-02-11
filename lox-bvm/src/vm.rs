@@ -1,4 +1,7 @@
-use crate::{chunk::Chunk, collections::stack::Stack, opcode::OpCode, value::Value};
+use crate::{
+    AsciiChar, chunk::Chunk, collections::stack::Stack, compiler::compile, opcode::OpCode,
+    value::Value,
+};
 
 pub struct VM {
     chunk: *mut Chunk,
@@ -16,11 +19,9 @@ impl VM {
         }
     }
 
-    pub fn interpret(&mut self, chunk: &mut Chunk) {
-        self.chunk = chunk;
-        self.ip = chunk.code.data;
-
-        let _ = self.run();
+    pub fn interpret(&mut self, source: *const AsciiChar) -> InterpretResult {
+        compile(source);
+        InterpretResult::Ok
     }
 
     fn run(&mut self) -> InterpretResult {
@@ -81,8 +82,19 @@ impl VM {
     pub fn free(&mut self) {}
 }
 
+#[derive(PartialEq)]
 pub enum InterpretResult {
     Ok,
-    _CompileError,
-    _RuntimeError,
+    CompileError,
+    RuntimeError,
+}
+
+impl InterpretResult {
+    pub fn to_exit_code(&self) -> i32 {
+        match self {
+            InterpretResult::Ok => 0,
+            InterpretResult::CompileError => 65,
+            InterpretResult::RuntimeError => 70,
+        }
+    }
 }
