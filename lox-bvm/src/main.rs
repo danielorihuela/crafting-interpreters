@@ -4,21 +4,16 @@ use std::{
     io::Write,
 };
 
-use crate::{opcode::OpCode, vm::VM};
+use crate::{types::AsciiChar, vm::VM};
 
-mod chunk;
 mod collections;
 mod compiler;
-mod opcode;
 mod scanner;
-mod token;
-mod value;
+mod types;
 mod vm;
 
-pub type AsciiChar = u8;
-
 fn main() {
-    let vm = &mut VM::init();
+    let vm = &mut VM::new();
 
     let args = std::env::args();
     match args.len() {

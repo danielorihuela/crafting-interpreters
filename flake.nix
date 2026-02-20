@@ -60,5 +60,22 @@
           (cd lox-tw; $go clean)
           (cd craftinginterpreters/tool; $dart pub cache clean -f)
         '';
+
+        packages.test-lox-bvm = pkgs.writeShellScriptBin "run-loxbvm-tests" ''
+          git=${pkgs.git}/bin/git
+          cargo=${pkgs.cargo}/bin/cargo
+          dart=${dartPkgs.dart}/bin/dart
+
+          $git submodule init
+          $git submodule update
+          (cd lox-bvm; $cargo build --release; $cargo test)
+          (cd craftinginterpreters/tool; $dart pub get > /dev/null)
+
+          cd craftinginterpreters
+          $dart tool/bin/test.dart chap17_compiling --interpreter ../lox-bvm/target/release/lox-bvm
+          cd ..
+
+          (cd craftinginterpreters/tool; $dart pub cache clean -f)
+        '';
       });
 }

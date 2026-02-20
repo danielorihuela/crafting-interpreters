@@ -1,3 +1,5 @@
+use std::ops::Index;
+
 use crate::collections::dynarray::DynArray;
 
 pub type Value = f64;
@@ -12,15 +14,15 @@ impl Values {
         self.dyn_array.write(value);
     }
 
-    pub fn free(&mut self) {
-        self.dyn_array.free();
-    }
-
     pub fn count(&self) -> usize {
         self.dyn_array.count
     }
+}
 
-    pub fn get_at(&self, pos: usize) -> Value {
-        *self.dyn_array.get_at(pos)
+impl Index<usize> for Values {
+    type Output = Value;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.dyn_array[index]
     }
 }

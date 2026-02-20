@@ -1,6 +1,9 @@
 use crate::{
-    AsciiChar, chunk::Chunk, collections::stack::Stack, compiler::compile, opcode::OpCode,
-    value::Value,
+    AsciiChar,
+    collections::{stack::Stack, value::Value},
+    compiler::Parser,
+    scanner::Scanner,
+    types::{chunk::Chunk, opcode::OpCode},
 };
 
 pub struct VM {
@@ -11,7 +14,7 @@ pub struct VM {
 }
 
 impl VM {
-    pub fn init() -> Self {
+    pub fn new() -> Self {
         VM {
             chunk: std::ptr::null_mut(),
             ip: std::ptr::null_mut(),
@@ -20,8 +23,18 @@ impl VM {
     }
 
     pub fn interpret(&mut self, source: *const AsciiChar) -> InterpretResult {
-        compile(source);
-        InterpretResult::Ok
+        let chunk = &mut Chunk::default();
+
+        let scanner = &mut Scanner::new(source);
+        let parser = &mut Parser::new(scanner);
+        if !parser.compile(chunk) {
+            return InterpretResult::CompileError;
+        }
+
+        self.chunk = chunk;
+        self.ip = unsafe { (*self.chunk).code.data };
+
+        self.run()
     }
 
     fn run(&mut self) -> InterpretResult {
@@ -31,7 +44,7 @@ impl VM {
                 use crate::collections::stack::debug::show_stack;
                 show_stack(&self.stack);
 
-                use crate::chunk::debug::disassemble_instruction;
+                use crate::types::chunk::debug::disassemble_instruction;
                 let offset = unsafe { self.ip.offset_from((*self.chunk).code.data) } as usize;
                 let _ = disassemble_instruction(unsafe { &*self.chunk }, offset);
             }
@@ -44,20 +57,15 @@ impl VM {
                     let position = unsafe { *self.ip } as usize;
                     self.ip = unsafe { self.ip.add(1) };
 
-                    let value = &unsafe { &*self.chunk }.values.get_at(position);
+                    let value = &unsafe { &*self.chunk }.values[position];
                     self.stack.push(*value);
                 }
-                OpCode::Add => {
-                    self.binary_op(|a, b| a + b);
-                }
-                OpCode::Subtract => {
-                    self.binary_op(|a, b| a - b);
-                }
-                OpCode::Multiply => {
-                    self.binary_op(|a, b| a * b);
-                }
-                OpCode::Divide => {
-                    self.binary_op(|a, b| a / b);
+                OpCode::Add | OpCode::Subtract | OpCode::Multiply | OpCode::Divide => {
+                    if let Some(op) = instruction.maybe_binary_op() {
+                        self.binary_op(op);
+                    } else {
+                        panic!("Unsupported binary operation");
+                    }
                 }
                 OpCode::Negate => {
                     let value = self.stack.pop();

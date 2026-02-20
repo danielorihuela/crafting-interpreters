@@ -45,3 +45,23 @@ pub mod debug {
         println!();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_stack_push_pop() {
+        let mut stack = Stack::<i32>::default();
+        assert_eq!(stack.top, stack.data.as_mut_ptr());
+
+        stack.push(1);
+        stack.push(2);
+        stack.push(3);
+
+        assert_eq!(stack.pop(), 3);
+        assert_eq!(stack.pop(), 2);
+        assert_eq!(stack.pop(), 1);
+        assert_eq!(stack.top, stack.data.as_mut_ptr());
+    }
+}

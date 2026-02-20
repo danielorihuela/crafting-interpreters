@@ -1,4 +1,7 @@
-use std::fmt::Display;
+use std::{
+    fmt::Display,
+    ops::{Add, Div, Mul, Sub},
+};
 
 #[repr(u8)]
 #[derive(Debug)]
@@ -11,6 +14,28 @@ pub enum OpCode {
     Negate,
     Return,
     Unknown,
+}
+
+impl OpCode {
+    pub fn maybe_binary_op<
+        T: Add<Output = T> + Sub<Output = T> + Mul<Output = T> + Div<Output = T>,
+    >(
+        &self,
+    ) -> Option<fn(T, T) -> T> {
+        match self {
+            OpCode::Add => Some(Add::add),
+            OpCode::Subtract => Some(Sub::sub),
+            OpCode::Multiply => Some(Mul::mul),
+            OpCode::Divide => Some(Div::div),
+            _ => None,
+        }
+    }
+}
+
+impl From<OpCode> for u8 {
+    fn from(op: OpCode) -> Self {
+        op as u8
+    }
 }
 
 impl From<u8> for OpCode {
