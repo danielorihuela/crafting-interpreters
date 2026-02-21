@@ -1,5 +1,5 @@
 use std::{
-    alloc::{Layout, dealloc, realloc},
+    alloc::{Layout, alloc, dealloc, realloc},
     fmt::Debug,
     ops::Index,
 };
@@ -28,7 +28,7 @@ impl<T> DynArray<T> {
             self.data = grow_array::<T>(self.data, old_capacity, self.capacity);
         }
 
-        unsafe { *self.data.add(self.count) = data };
+        unsafe { self.data.add(self.count).write(data) };
         self.count += 1;
     }
 }
@@ -57,21 +57,25 @@ fn free_array<T>(ptr: *mut T, capacity: usize) {
 }
 
 fn reallocate<T>(ptr: *mut T, old_capacity: usize, new_capacity: usize) -> *mut T {
+    let new_layout = Layout::array::<T>(new_capacity).unwrap();
+    if old_capacity == 0 {
+        return unsafe { alloc(new_layout) } as *mut T;
+    }
+
     let old_layout = Layout::array::<T>(old_capacity).unwrap();
-    if new_capacity == 0 && old_capacity > 0 && !ptr.is_null() {
+    if new_capacity == 0 {
         unsafe {
             dealloc(ptr as *mut u8, old_layout);
         }
         return std::ptr::null_mut();
     };
 
-    let new_layout = Layout::array::<T>(new_capacity).unwrap();
-    let ret = unsafe { realloc(ptr as *mut u8, old_layout, new_layout.size()) } as *mut T;
+    let ret = unsafe { realloc(ptr as *mut u8, old_layout, new_layout.size()) };
     if ret.is_null() {
         panic!("Memory reallocation failed");
     }
 
-    ret
+    ret as *mut T
 }
 
 impl<T> Index<usize> for DynArray<T> {
@@ -169,5 +173,12 @@ mod tests {
 
         array1.write(8);
         assert_ne!(array1, array2);
+    }
+
+    // Checks memory is not leaked for types with Drop (like String) using Miri
+    #[test]
+    fn test_dynarray_string() {
+        let mut array = DynArray::<String>::default();
+        array.write(String::from("hello"));
     }
 }

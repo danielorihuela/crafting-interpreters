@@ -8,13 +8,24 @@
 
     flake-utils.url = "github:numtide/flake-utils";
 
+    fenix = {
+      url = "github:nix-community/fenix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs, nixpkgs-dart, flake-utils }:
+  outputs = { self, nixpkgs, nixpkgs-dart, flake-utils, fenix }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs { inherit system; };
         dartPkgs = import nixpkgs-dart { inherit system; };
+        fenixPkgs = fenix.packages.${system};
+        rustNightly = fenixPkgs.complete.withComponents [
+          "cargo"
+          "rustc"
+          "rust-src"
+          "miri"
+        ];
       in {
         devShells = {
           go = pkgs.mkShell {
@@ -31,6 +42,7 @@
           };
 
           rust = pkgs.mkShell {
+            buildInputs = [ rustNightly ];
             packages = with pkgs; [ cargo rustc rustfmt clippy ];
           };
         };
@@ -62,13 +74,15 @@
         '';
 
         packages.test-lox-bvm = pkgs.writeShellScriptBin "run-loxbvm-tests" ''
+          export PATH=${rustNightly}/bin:$PATH
+
           git=${pkgs.git}/bin/git
           cargo=${pkgs.cargo}/bin/cargo
           dart=${dartPkgs.dart}/bin/dart
 
           $git submodule init
           $git submodule update
-          (cd lox-bvm; $cargo build --release; $cargo test)
+          (cd lox-bvm; $cargo build --release; $cargo test; cargo miri test)
           (cd craftinginterpreters/tool; $dart pub get > /dev/null)
 
           cd craftinginterpreters
