@@ -1,4 +1,5 @@
 use crate::AsciiChar;
+
 #[derive(Clone)]
 pub struct Token {
     pub ttype: Type,

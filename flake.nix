@@ -3,8 +3,7 @@
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";
-    nixpkgs-dart.url =
-      "github:nixos/nixpkgs?ref=e040aab15638aaf8d0786894851a2b1ca09a7baf";
+    nixpkgs-dart.url = "github:nixos/nixpkgs?ref=e040aab15638aaf8d0786894851a2b1ca09a7baf";
 
     flake-utils.url = "github:numtide/flake-utils";
 
@@ -14,8 +13,16 @@
     };
   };
 
-  outputs = { self, nixpkgs, nixpkgs-dart, flake-utils, fenix }:
-    flake-utils.lib.eachDefaultSystem (system:
+  outputs =
+    {
+      self,
+      nixpkgs,
+      nixpkgs-dart,
+      flake-utils,
+      fenix,
+    }:
+    flake-utils.lib.eachDefaultSystem (
+      system:
       let
         pkgs = import nixpkgs { inherit system; };
         dartPkgs = import nixpkgs-dart { inherit system; };
@@ -26,7 +33,8 @@
           "rust-src"
           "miri"
         ];
-      in {
+      in
+      {
         devShells = {
           go = pkgs.mkShell {
             packages = [ pkgs.go ];
@@ -43,7 +51,12 @@
 
           rust = pkgs.mkShell {
             buildInputs = [ rustNightly ];
-            packages = with pkgs; [ cargo rustc rustfmt clippy ];
+            packages = with pkgs; [
+              cargo
+              rustc
+              rustfmt
+              clippy
+            ];
           };
         };
 
@@ -87,9 +100,11 @@
 
           cd craftinginterpreters
           $dart tool/bin/test.dart chap17_compiling --interpreter ../lox-bvm/target/release/lox-bvm
+          $dart tool/bin/test.dart chap18_types --interpreter ../lox-bvm/target/release/lox-bvm
           cd ..
 
           (cd craftinginterpreters/tool; $dart pub cache clean -f)
         '';
-      });
+      }
+    );
 }

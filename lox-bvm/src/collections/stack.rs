@@ -28,6 +28,10 @@ impl<T> Stack<T> {
             self.data.as_ptr().add(self.top).read()
         }
     }
+
+    pub fn peek_at(&self, distance: usize) -> &T {
+        unsafe { &*self.data.as_ptr().add(self.top - 1 - distance) }
+    }
 }
 
 #[cfg(debug_assertions)]

@@ -1,8 +1,6 @@
 use std::ops::Index;
 
-use crate::collections::dynarray::DynArray;
-
-pub type Value = f64;
+use crate::{collections::dynarray::DynArray, types::value::Value};
 
 #[derive(Default)]
 pub struct Values {

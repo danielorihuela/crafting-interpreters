@@ -1,13 +1,13 @@
-use crate::collections::{
-    dynarray::DynArray,
-    value::{Value, Values},
+use crate::{
+    collections::{dynarray::DynArray, value::Values},
+    types::value::Value,
 };
 
 #[derive(Default)]
 pub struct Chunk {
     pub code: DynArray<u8>,
     pub values: Values,
-    lines: DynArray<usize>,
+    pub lines: DynArray<usize>,
 }
 
 impl Chunk {
@@ -49,17 +49,12 @@ pub mod debug {
                 print_constant_instructions(chunk, offset, opcode);
                 offset + 2
             }
-            OpCode::Add
-            | OpCode::Subtract
-            | OpCode::Multiply
-            | OpCode::Divide
-            | OpCode::Negate
-            | OpCode::Return => {
-                println!("{}", opcode);
-                offset + 1
-            }
             OpCode::Unknown => {
                 println!("Unknown opcode {}", instruction);
+                offset + 1
+            }
+            _ => {
+                println!("{}", opcode);
                 offset + 1
             }
         }
@@ -75,7 +70,7 @@ pub mod debug {
 
     fn print_constant_instructions(chunk: &Chunk, offset: usize, opcode: OpCode) {
         let constant = unsafe { *(chunk.code.data).add(offset + 1) };
-        let value = chunk.values[constant as usize];
+        let value = &chunk.values[constant as usize];
         println!("{:<16} {constant:4} '{value}'", opcode.to_string());
     }
 }
@@ -105,12 +100,12 @@ mod tests {
     fn test_chunk_add_constant() {
         let mut chunk = Chunk::default();
 
-        let index = chunk.add_constant(42.0);
+        let index = chunk.add_constant(Value::from(42.0));
         assert_eq!(index, 0);
-        assert_eq!(chunk.values[0], 42.0);
+        assert_eq!(chunk.values[0], Value::from(42.0));
 
-        let index = chunk.add_constant(84.0);
+        let index = chunk.add_constant(Value::from(84.0));
         assert_eq!(index, 1);
-        assert_eq!(chunk.values[1], 84.0);
+        assert_eq!(chunk.values[1], Value::from(84.0));
     }
 }

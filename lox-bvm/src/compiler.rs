@@ -1,10 +1,9 @@
-use std::{ffi::CString, slice::from_raw_parts, str::from_utf8_unchecked};
+use std::{ffi::CString, mem::transmute, slice::from_raw_parts, str::from_utf8_unchecked};
 
 use crate::{
     AsciiChar,
-    collections::value::Value,
     scanner::Scanner,
-    types::{TokenType, chunk::Chunk, opcode::OpCode, token::Token},
+    types::{TokenType, chunk::Chunk, opcode::OpCode, token::Token, value::Value},
 };
 
 pub struct Parser<'a> {
@@ -112,7 +111,7 @@ impl<'a> Parser<'a> {
         let value = unsafe { from_raw_parts(self.previous.start, self.previous.length) };
         let value = unsafe { from_utf8_unchecked(value) };
         let value: f64 = value.parse().unwrap();
-        self.emit_constant(value);
+        self.emit_constant(Value::from(value));
     }
 
     fn grouping(&mut self) {
@@ -132,6 +131,7 @@ impl<'a> Parser<'a> {
         self.parse_precedence(Precedence::Unary);
 
         match operator_type {
+            TokenType::Bang => self.emit_byte(OpCode::Not),
             TokenType::Minus => self.emit_byte(OpCode::Negate),
             _ => (),
         }
@@ -148,7 +148,22 @@ impl<'a> Parser<'a> {
             TokenType::Minus => self.emit_byte(OpCode::Subtract),
             TokenType::Star => self.emit_byte(OpCode::Multiply),
             TokenType::Slash => self.emit_byte(OpCode::Divide),
+            TokenType::BangEqual => self.emit_bytes(OpCode::Equal, OpCode::Not),
+            TokenType::EqualEqual => self.emit_byte(OpCode::Equal),
+            TokenType::Greater => self.emit_byte(OpCode::Greater),
+            TokenType::GreaterEqual => self.emit_bytes(OpCode::Less, OpCode::Not),
+            TokenType::Less => self.emit_byte(OpCode::Less),
+            TokenType::LessEqual => self.emit_bytes(OpCode::Greater, OpCode::Not),
             _ => (),
+        }
+    }
+
+    fn literal(&mut self) {
+        match self.previous.ttype.clone() {
+            TokenType::False => self.emit_byte(OpCode::False),
+            TokenType::True => self.emit_byte(OpCode::True),
+            TokenType::Nil => self.emit_byte(OpCode::Nil),
+            _ => unreachable!(),
         }
     }
 
@@ -184,6 +199,29 @@ impl<'a> Parser<'a> {
                 infix: None,
                 precedence: Precedence::None,
             },
+            TokenType::True | TokenType::False | TokenType::Nil => ParseRule {
+                prefix: Some(|parser| parser.literal()),
+                infix: None,
+                precedence: Precedence::None,
+            },
+            TokenType::Bang => ParseRule {
+                prefix: Some(|parser| parser.unary()),
+                infix: None,
+                precedence: Precedence::None,
+            },
+            TokenType::BangEqual | TokenType::EqualEqual => ParseRule {
+                prefix: None,
+                infix: Some(|parser| parser.binary()),
+                precedence: Precedence::Equality,
+            },
+            TokenType::Greater
+            | TokenType::GreaterEqual
+            | TokenType::Less
+            | TokenType::LessEqual => ParseRule {
+                prefix: None,
+                infix: Some(|parser| parser.binary()),
+                precedence: Precedence::Comparison,
+            },
             _ => ParseRule {
                 prefix: None,
                 infix: None,
@@ -191,9 +229,7 @@ impl<'a> Parser<'a> {
             },
         }
     }
-}
 
-impl<'a> Parser<'a> {
     fn emit_byte(&mut self, b: impl Into<u8>) {
         unsafe {
             (*self.chunk).write(b.into(), self.previous.line as usize);
@@ -228,9 +264,7 @@ impl<'a> Parser<'a> {
 
         constant as u8
     }
-}
 
-impl<'a> Parser<'a> {
     fn error_at_current(&mut self, message: *const AsciiChar) {
         let token = &self.current.clone();
         self.error_at(token, message);
@@ -247,10 +281,10 @@ impl<'a> Parser<'a> {
         }
 
         self.panic_mode = true;
-        eprintln!("[line {}] Error", token.line);
+        eprint!("[line {}] Error", token.line);
 
         if token.ttype == TokenType::Eof {
-            eprintln!(" at end");
+            eprint!(" at end");
         } else if token.ttype == TokenType::Error {
         } else {
             let s = unsafe { from_raw_parts(token.start, token.length) };
@@ -282,19 +316,10 @@ enum Precedence {
 
 impl From<u8> for Precedence {
     fn from(value: u8) -> Self {
-        match value {
-            0 => Precedence::None,
-            1 => Precedence::Assignment,
-            2 => Precedence::Or,
-            3 => Precedence::And,
-            4 => Precedence::Equality,
-            5 => Precedence::Comparison,
-            6 => Precedence::Term,
-            7 => Precedence::Factor,
-            8 => Precedence::Unary,
-            9 => Precedence::Call,
-            10 => Precedence::Primary,
-            _ => Precedence::None,
+        if value > Precedence::Primary as u8 {
+            Precedence::None
+        } else {
+            unsafe { transmute::<u8, Precedence>(value) }
         }
     }
 }
@@ -386,6 +411,78 @@ mod tests {
                 OpCode::Add.into(),
                 OpCode::Constant.into(), 2,
                 OpCode::Multiply.into(),
+                OpCode::Return.into(),
+            ]
+        ),
+        literal: (
+            "true",
+            vec![
+                OpCode::True,
+                OpCode::Return,
+            ]
+        ),
+        not: (
+            "!true",
+            vec![
+                OpCode::True,
+                OpCode::Not,
+                OpCode::Return,
+            ]
+        ),
+        not_equal: (
+            "2 != 3",
+            vec![
+                OpCode::Constant.into(), 0,
+                OpCode::Constant.into(), 1,
+                OpCode::Equal.into(),
+                OpCode::Not.into(),
+                OpCode::Return.into(),
+            ]
+        ),
+        equal: (
+            "2 == 3",
+            vec![
+                OpCode::Constant.into(), 0,
+                OpCode::Constant.into(), 1,
+                OpCode::Equal.into(),
+                OpCode::Return.into(),
+            ]
+        ),
+        greater: (
+            "2 > 3",
+            vec![
+                OpCode::Constant.into(), 0,
+                OpCode::Constant.into(), 1,
+                OpCode::Greater.into(),
+                OpCode::Return.into(),
+            ]
+        ),
+        greater_equal: (
+            "2 >= 3",
+            vec![
+                OpCode::Constant.into(), 0,
+                OpCode::Constant.into(), 1,
+                OpCode::Less.into(),
+                OpCode::Not.into(),
+                OpCode::Return.into(),
+            ]
+        ),
+        less: (
+            "2 < 3",
+            vec![
+                OpCode::Constant.into(), 0,
+                OpCode::Constant.into(), 1,
+                OpCode::Less.into(),
+                OpCode::Return.into(),
+            ]
+        ),
+        less_equal: (
+            "2 <= 3",
+            vec![
+                OpCode::Constant.into(), 0,
+                OpCode::Constant.into(), 1,
+                OpCode::Greater.into(),
+                OpCode::Not.into(),
                 OpCode::Return.into(),
             ]
         ),
