@@ -1,12 +1,9 @@
-use crate::{
-    collections::{dynarray::DynArray, value::Values},
-    types::value::Value,
-};
+use crate::{collections::dynarray::DynArray, types::value::Value};
 
 #[derive(Default)]
 pub struct Chunk {
     pub code: DynArray<u8>,
-    pub values: Values,
+    pub values: DynArray<Value>,
     pub lines: DynArray<usize>,
 }
 
@@ -18,7 +15,7 @@ impl Chunk {
 
     pub fn add_constant(&mut self, value: Value) -> usize {
         self.values.write(value);
-        self.values.count() - 1
+        self.values.count - 1
     }
 }
 

@@ -8,6 +8,7 @@ use crate::{types::AsciiChar, vm::VM};
 
 mod collections;
 mod compiler;
+mod memory;
 mod scanner;
 mod types;
 mod vm;

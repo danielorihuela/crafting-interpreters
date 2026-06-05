@@ -1,10 +1,6 @@
-use std::{
-    fmt::Display,
-    mem::transmute,
-    ops::{Add, Div, Mul, Sub},
-};
+use std::{fmt::Display, mem::transmute};
 
-use crate::types::value::Value;
+use crate::types::value::{OperationError, Value};
 
 #[repr(u8)]
 #[derive(Debug)]
@@ -30,14 +26,13 @@ pub enum OpCode {
 }
 
 impl OpCode {
-    pub fn maybe_binary_op(&self) -> Option<fn(Value, Value) -> Value> {
+    pub fn maybe_binary_op(&self) -> Option<fn(Value, Value) -> Result<Value, OperationError>> {
         match self {
-            OpCode::Add => Some(Add::add),
-            OpCode::Subtract => Some(Sub::sub),
-            OpCode::Multiply => Some(Mul::mul),
-            OpCode::Divide => Some(Div::div),
-            OpCode::Greater => Some(|a, b| Value::from(a.as_number() > b.as_number())),
-            OpCode::Less => Some(|a, b| Value::from(a.as_number() < b.as_number())),
+            OpCode::Subtract => Some(|a, b| a - b),
+            OpCode::Multiply => Some(|a, b| a * b),
+            OpCode::Divide => Some(|a, b| a / b),
+            OpCode::Greater => Some(|a, b| Ok(Value::from(a > b))),
+            OpCode::Less => Some(|a, b| Ok(Value::from(a < b))),
             _ => None,
         }
     }

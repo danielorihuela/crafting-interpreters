@@ -3,7 +3,13 @@ use std::{ffi::CString, mem::transmute, slice::from_raw_parts, str::from_utf8_un
 use crate::{
     AsciiChar,
     scanner::Scanner,
-    types::{TokenType, chunk::Chunk, opcode::OpCode, token::Token, value::Value},
+    types::{
+        TokenType,
+        chunk::Chunk,
+        opcode::OpCode,
+        token::Token,
+        value::{Value, obj::Obj, string::ObjString},
+    },
 };
 
 pub struct Parser<'a> {
@@ -13,18 +19,20 @@ pub struct Parser<'a> {
     previous: Token,
 
     chunk: *mut Chunk,
+    objects: *mut *mut Obj,
 
     had_error: bool,
     panic_mode: bool,
 }
 
 impl<'a> Parser<'a> {
-    pub fn new(scanner: &'a mut Scanner) -> Self {
+    pub fn new(scanner: &'a mut Scanner, objects: *mut *mut Obj) -> Self {
         Self {
             scanner,
             current: Token::default(),
             previous: Token::default(),
             chunk: std::ptr::null_mut(),
+            objects,
             had_error: false,
             panic_mode: false,
         }
@@ -167,6 +175,14 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn string(&mut self) {
+        let start = unsafe { self.previous.start.add(1) };
+        let end = self.previous.length - 2;
+        let string = ObjString::new(start, end, self.objects);
+        let obj = Value::from(string);
+        self.emit_constant(obj);
+    }
+
     fn get_rule(&self, ttype: TokenType) -> ParseRule {
         match ttype {
             TokenType::LeftParen => ParseRule {
@@ -222,6 +238,11 @@ impl<'a> Parser<'a> {
                 infix: Some(|parser| parser.binary()),
                 precedence: Precedence::Comparison,
             },
+            TokenType::String => ParseRule {
+                prefix: Some(|parser| parser.string()),
+                infix: None,
+                precedence: Precedence::None,
+            },
             _ => ParseRule {
                 prefix: None,
                 infix: None,
@@ -231,9 +252,7 @@ impl<'a> Parser<'a> {
     }
 
     fn emit_byte(&mut self, b: impl Into<u8>) {
-        unsafe {
-            (*self.chunk).write(b.into(), self.previous.line as usize);
-        }
+        unsafe { (*self.chunk).write(b.into(), self.previous.line as usize) }
     }
 
     fn emit_return(&mut self) {
@@ -343,7 +362,7 @@ mod tests {
 
                     let source = CString::new(input).unwrap();
                     let scanner = &mut Scanner::new(source.as_bytes_with_nul().as_ptr());
-                    let parser = &mut Parser::new(scanner);
+                    let parser = &mut Parser::new(scanner, std::ptr::null_mut());
 
                     let chunk = &mut Chunk::default();
                     parser.compile(chunk);

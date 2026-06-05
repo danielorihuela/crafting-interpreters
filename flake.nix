@@ -101,6 +101,7 @@
           cd craftinginterpreters
           $dart tool/bin/test.dart chap17_compiling --interpreter ../lox-bvm/target/release/lox-bvm
           $dart tool/bin/test.dart chap18_types --interpreter ../lox-bvm/target/release/lox-bvm
+          $dart tool/bin/test.dart chap19_strings --interpreter ../lox-bvm/target/release/lox-bvm
           cd ..
 
           (cd craftinginterpreters/tool; $dart pub cache clean -f)
