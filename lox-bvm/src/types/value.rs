@@ -97,14 +97,10 @@ impl PartialEq for Value {
             ValueType::Number => self.as_number() == other.as_number(),
             ValueType::Nil => true,
             ValueType::Obj => {
-                let a = self.as_string();
-                let b = other.as_string();
+                let a = self.as_obj();
+                let b = other.as_obj();
 
-                unsafe {
-                    (*a).length == (*b).length
-                        && std::slice::from_raw_parts((*a).chars, (*a).length)
-                            == std::slice::from_raw_parts((*b).chars, (*b).length)
-                }
+                a == b
             }
         }
     }

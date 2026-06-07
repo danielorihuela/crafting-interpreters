@@ -2,6 +2,7 @@ use std::{ffi::CString, mem::transmute, slice::from_raw_parts, str::from_utf8_un
 
 use crate::{
     AsciiChar,
+    collections::hashtable::HashTable,
     scanner::Scanner,
     types::{
         TokenType,
@@ -20,19 +21,21 @@ pub struct Parser<'a> {
 
     chunk: *mut Chunk,
     objects: *mut *mut Obj,
+    strings: *mut HashTable,
 
     had_error: bool,
     panic_mode: bool,
 }
 
 impl<'a> Parser<'a> {
-    pub fn new(scanner: &'a mut Scanner, objects: *mut *mut Obj) -> Self {
+    pub fn new(scanner: &'a mut Scanner, objects: *mut *mut Obj, strings: *mut HashTable) -> Self {
         Self {
             scanner,
             current: Token::default(),
             previous: Token::default(),
             chunk: std::ptr::null_mut(),
             objects,
+            strings,
             had_error: false,
             panic_mode: false,
         }
@@ -178,7 +181,7 @@ impl<'a> Parser<'a> {
     fn string(&mut self) {
         let start = unsafe { self.previous.start.add(1) };
         let end = self.previous.length - 2;
-        let string = ObjString::new(start, end, self.objects);
+        let string = ObjString::new(start, end, self.objects, self.strings);
         let obj = Value::from(string);
         self.emit_constant(obj);
     }
@@ -362,7 +365,7 @@ mod tests {
 
                     let source = CString::new(input).unwrap();
                     let scanner = &mut Scanner::new(source.as_bytes_with_nul().as_ptr());
-                    let parser = &mut Parser::new(scanner, std::ptr::null_mut());
+                    let parser = &mut Parser::new(scanner, std::ptr::null_mut(), std::ptr::null_mut());
 
                     let chunk = &mut Chunk::default();
                     parser.compile(chunk);

@@ -1,6 +1,6 @@
 use crate::{
     AsciiChar,
-    collections::stack::Stack,
+    collections::{hashtable::HashTable, stack::Stack},
     compiler::Parser,
     scanner::Scanner,
     types::{
@@ -19,6 +19,7 @@ pub struct VM {
 
     stack: Stack<Value>,
     objects: *mut Obj,
+    strings: HashTable,
 }
 
 impl VM {
@@ -28,6 +29,7 @@ impl VM {
             ip: std::ptr::null_mut(),
             stack: Stack::default(),
             objects: std::ptr::null_mut(),
+            strings: HashTable::new(),
         }
     }
 
@@ -35,7 +37,7 @@ impl VM {
         let chunk = &mut Chunk::default();
 
         let scanner = &mut Scanner::new(source);
-        let parser = &mut Parser::new(scanner, &mut self.objects);
+        let parser = &mut Parser::new(scanner, &mut self.objects, &mut self.strings);
         if !parser.compile(chunk) {
             return InterpretResult::CompileError;
         }
@@ -74,7 +76,11 @@ impl VM {
                     let a = self.stack.pop();
                     let result = if a.is_string() && b.is_string() {
                         Ok(Value::from(unsafe {
-                            (*a.as_string()).add(b.as_string(), &mut self.objects)
+                            (*a.as_string()).add(
+                                b.as_string(),
+                                &mut self.objects,
+                                &mut self.strings,
+                            )
                         }))
                     } else {
                         a + b
@@ -143,6 +149,8 @@ impl VM {
             unsafe { free_object(object) };
             object = next;
         }
+
+        self.strings.free();
     }
 
     fn runtime_error(&mut self, message: &str) {
