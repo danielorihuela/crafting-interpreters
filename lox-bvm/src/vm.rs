@@ -59,6 +59,10 @@ impl VM {
     }
 
     fn run(&mut self) -> InterpretResult {
+        #[cfg(debug_assertions)]
+        {
+            println!("\n=== Running bytecode ===");
+        }
         loop {
             #[cfg(debug_assertions)]
             {

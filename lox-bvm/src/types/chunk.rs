@@ -46,6 +46,14 @@ pub mod debug {
                 print_constant_instructions(chunk, offset, opcode);
                 offset + 2
             }
+            OpCode::DefineGlobal | OpCode::GetGlobal | OpCode::SetGlobal => {
+                print_constant_instructions(chunk, offset, opcode);
+                offset + 2
+            }
+            OpCode::GetLocal | OpCode::SetLocal => {
+                println!("{:<16} {:4}", opcode.to_string(), chunk.code[offset + 1]);
+                offset + 2
+            }
             OpCode::Unknown => {
                 println!("Unknown opcode {}", instruction);
                 offset + 1
