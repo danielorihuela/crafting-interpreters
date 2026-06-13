@@ -1,4 +1,6 @@
-use std::{ffi::CString, mem::transmute, slice::from_raw_parts, str::from_utf8_unchecked};
+use std::{
+    f32::consts::E, ffi::CString, mem::transmute, slice::from_raw_parts, str::from_utf8_unchecked,
+};
 
 use crate::{
     AsciiChar,
@@ -15,6 +17,7 @@ use crate::{
 
 pub struct Parser<'a> {
     scanner: &'a mut Scanner,
+    compiler: &'a mut Compiler,
 
     current: Token,
     previous: Token,
@@ -28,9 +31,15 @@ pub struct Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
-    pub fn new(scanner: &'a mut Scanner, objects: *mut *mut Obj, strings: *mut HashTable) -> Self {
+    pub fn new(
+        scanner: &'a mut Scanner,
+        compiler: &'a mut Compiler,
+        objects: *mut *mut Obj,
+        strings: *mut HashTable,
+    ) -> Self {
         Self {
             scanner,
+            compiler,
             current: Token::default(),
             previous: Token::default(),
             chunk: std::ptr::null_mut(),
@@ -97,8 +106,59 @@ impl<'a> Parser<'a> {
                 .as_bytes_with_nul()
                 .as_ptr(),
         );
-
         self.define_variable(global);
+    }
+
+    fn declare_variable(&mut self) {
+        if self.compiler.scope_depth == 0 {
+            return;
+        }
+
+        for i in (0..self.compiler.local_count).rev() {
+            let local = &self.compiler.locals[i as usize];
+            if local.depth != -1 && local.depth < self.compiler.scope_depth {
+                break;
+            }
+
+            if self.identifiers_equal(&local.name, &self.previous) {
+                self.error(
+                    CString::new("Already a variable with this name in this scope.")
+                        .unwrap()
+                        .as_bytes_with_nul()
+                        .as_ptr(),
+                );
+            }
+        }
+
+        self.add_local();
+    }
+
+    fn identifiers_equal(&self, a: &Token, b: &Token) -> bool {
+        if a.length != b.length {
+            return false;
+        }
+
+        let a_slice = unsafe { from_raw_parts(a.start, a.length) };
+        let b_slice = unsafe { from_raw_parts(b.start, b.length) };
+
+        a_slice == b_slice
+    }
+
+    fn add_local(&mut self) {
+        if self.compiler.local_count == u8::MAX {
+            self.error(
+                CString::new("Too many local variables in function.")
+                    .unwrap()
+                    .as_bytes_with_nul()
+                    .as_ptr(),
+            );
+            return;
+        }
+
+        let local = &mut self.compiler.locals[self.compiler.local_count as usize];
+        local.name = self.previous.clone();
+        local.depth = -1;
+        self.compiler.local_count += 1;
     }
 
     fn parse_variable(&mut self, error_message: &str) -> u8 {
@@ -109,6 +169,11 @@ impl<'a> Parser<'a> {
                 .as_bytes_with_nul()
                 .as_ptr(),
         );
+
+        self.declare_variable();
+        if self.compiler.scope_depth > 0 {
+            return 0;
+        }
 
         self.identifier_constant()
     }
@@ -125,12 +190,26 @@ impl<'a> Parser<'a> {
     }
 
     fn define_variable(&mut self, global: u8) {
+        if self.compiler.scope_depth > 0 {
+            self.mark_initialized();
+            return;
+        }
+
         self.emit_bytes(OpCode::DefineGlobal, global);
+    }
+
+    fn mark_initialized(&mut self) {
+        let local = &mut self.compiler.locals[self.compiler.local_count as usize - 1];
+        local.depth = self.compiler.scope_depth;
     }
 
     fn statement(&mut self) {
         if self.match_type(TokenType::Print) {
             self.print_statement();
+        } else if self.match_type(TokenType::LeftBrace) {
+            self.begin_scope();
+            self.block();
+            self.end_scope();
         } else {
             self.expression_statement();
         }
@@ -146,6 +225,36 @@ impl<'a> Parser<'a> {
                 .as_ptr(),
         );
         self.emit_byte(OpCode::Print);
+    }
+
+    fn begin_scope(&mut self) {
+        self.compiler.scope_depth += 1;
+    }
+
+    fn block(&mut self) {
+        while self.current.ttype != TokenType::RightBrace && self.current.ttype != TokenType::Eof {
+            self.declaration();
+        }
+
+        self.consume(
+            TokenType::RightBrace,
+            CString::new("Expect '}' after block.")
+                .unwrap()
+                .as_bytes_with_nul()
+                .as_ptr(),
+        );
+    }
+
+    fn end_scope(&mut self) {
+        self.compiler.scope_depth -= 1;
+
+        while self.compiler.local_count > 0
+            && self.compiler.locals[self.compiler.local_count as usize - 1].depth
+                > self.compiler.scope_depth
+        {
+            self.emit_byte(OpCode::Pop);
+            self.compiler.local_count -= 1;
+        }
     }
 
     fn expression_statement(&mut self) {
@@ -330,14 +439,43 @@ impl<'a> Parser<'a> {
     }
 
     fn named_variable(&mut self, can_assign: bool) {
-        let arg = self.identifier_constant();
+        let mut set_opcode = OpCode::SetGlobal;
+        let mut get_opcode = OpCode::GetGlobal;
+        let mut arg = self.resolve_local();
+        if arg != -1 {
+            set_opcode = OpCode::SetLocal;
+            get_opcode = OpCode::GetLocal;
+        } else {
+            arg = self.identifier_constant() as i8;
+            set_opcode = OpCode::SetGlobal;
+            get_opcode = OpCode::GetGlobal;
+        }
 
         if can_assign && self.match_type(TokenType::Equal) {
             self.expression();
-            self.emit_bytes(OpCode::SetGlobal, arg);
+            self.emit_bytes(set_opcode, arg as u8);
         } else {
-            self.emit_bytes(OpCode::GetGlobal, arg);
+            self.emit_bytes(get_opcode, arg as u8);
         }
+    }
+
+    fn resolve_local(&mut self) -> i8 {
+        for i in (0..self.compiler.local_count).rev() {
+            let local = &self.compiler.locals[i as usize];
+            if self.identifiers_equal(&local.name, &self.previous) {
+                if local.depth == -1 {
+                    self.error(
+                        CString::new("Can't read local variable in its own initializer.")
+                            .unwrap()
+                            .as_bytes_with_nul()
+                            .as_ptr(),
+                    );
+                }
+                return i as i8;
+            }
+        }
+
+        -1
     }
 
     fn get_rule(&self, ttype: TokenType, can_assign: bool) -> ParseRule {
@@ -511,6 +649,32 @@ struct ParseRule {
     precedence: Precedence,
 }
 
+pub struct Compiler {
+    locals: [Local; u8::MAX as usize],
+    local_count: u8,
+    scope_depth: i8,
+}
+
+#[derive(Clone)]
+pub struct Local {
+    name: Token,
+    depth: i8,
+}
+
+impl Compiler {
+    pub fn new() -> Self {
+        let local = Local {
+            name: Token::default(),
+            depth: 0,
+        };
+        Self {
+            locals: [0; u8::MAX as usize].map(|_| local.clone()),
+            local_count: 0,
+            scope_depth: 0,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -524,7 +688,8 @@ mod tests {
 
                     let source = CString::new(input).unwrap();
                     let scanner = &mut Scanner::new(source.as_bytes_with_nul().as_ptr());
-                    let parser = &mut Parser::new(scanner, std::ptr::null_mut(), std::ptr::null_mut());
+                    let compiler = &mut Compiler::new();
+                    let parser = &mut Parser::new(scanner, compiler, std::ptr::null_mut(), std::ptr::null_mut());
 
                     let chunk = &mut Chunk::default();
                     parser.compile(chunk);

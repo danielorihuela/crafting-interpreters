@@ -1,7 +1,7 @@
 use crate::{
     AsciiChar,
     collections::{hashtable::HashTable, stack::Stack},
-    compiler::Parser,
+    compiler::{Compiler, Parser},
     scanner::Scanner,
     types::{
         chunk::Chunk,
@@ -44,8 +44,10 @@ impl VM {
     pub fn interpret(&mut self, source: *const AsciiChar) -> InterpretResult {
         let chunk = &mut Chunk::default();
 
+        let compiler = &mut Compiler::new();
+
         let scanner = &mut Scanner::new(source);
-        let parser = &mut Parser::new(scanner, &mut self.objects, &mut self.strings);
+        let parser = &mut Parser::new(scanner, compiler, &mut self.objects, &mut self.strings);
         if !parser.compile(chunk) {
             return InterpretResult::CompileError;
         }
@@ -121,7 +123,7 @@ impl VM {
                     }
                 }
                 OpCode::Negate => {
-                    if !self.stack[0].is_number() {
+                    if !self.stack.peek(0).is_number() {
                         self.runtime_error("Operand must be a number.");
                         return InterpretResult::RuntimeError;
                     }
@@ -155,7 +157,7 @@ impl VM {
                     self.ip = unsafe { self.ip.add(1) };
 
                     let name = unsafe { &*self.chunk }.values[position].as_string();
-                    self.globals.set(name, self.stack[0].clone());
+                    self.globals.set(name, self.stack.peek(0).clone());
                     let _ = self.stack.pop();
                 }
                 OpCode::GetGlobal => {
@@ -179,7 +181,7 @@ impl VM {
                     self.ip = unsafe { self.ip.add(1) };
 
                     let name = unsafe { &*self.chunk }.values[position].as_string();
-                    if self.globals.set(name, self.stack[0].clone()) {
+                    if self.globals.set(name, self.stack.peek(0).clone()) {
                         self.globals.delete(name);
                         self.runtime_error(&format!(
                             "Undefined variable '{}'.",
@@ -187,6 +189,18 @@ impl VM {
                         ));
                         return InterpretResult::RuntimeError;
                     };
+                }
+                OpCode::GetLocal => {
+                    let slot = unsafe { *self.ip } as usize;
+                    self.ip = unsafe { self.ip.add(1) };
+
+                    self.stack.push(self.stack[slot].clone());
+                }
+                OpCode::SetLocal => {
+                    let slot = unsafe { *self.ip } as usize;
+                    self.ip = unsafe { self.ip.add(1) };
+
+                    self.stack[slot] = self.stack.peek(0).clone();
                 }
                 OpCode::Unknown => panic!("Something went wrong running the bytecode"),
             }

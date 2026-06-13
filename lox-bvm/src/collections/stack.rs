@@ -1,4 +1,7 @@
-use std::{mem::MaybeUninit, ops::Index};
+use std::{
+    mem::MaybeUninit,
+    ops::{Index, IndexMut},
+};
 
 const STACK_MAX: usize = 256;
 
@@ -20,11 +23,21 @@ impl<T> Index<usize> for Stack<T> {
     type Output = T;
 
     fn index(&self, index: usize) -> &Self::Output {
-        unsafe { &*self.data[self.top - 1 - index].as_ptr() }
+        unsafe { &*self.data[index].as_ptr() }
+    }
+}
+
+impl<T> IndexMut<usize> for Stack<T> {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        unsafe { &mut *self.data[index].as_mut_ptr() }
     }
 }
 
 impl<T> Stack<T> {
+    pub fn peek(&self, distance: usize) -> &T {
+        unsafe { &*self.data[self.top - 1 - distance].as_ptr() }
+    }
+
     pub fn push(&mut self, value: T) {
         self.data[self.top] = MaybeUninit::new(value);
         self.top += 1;
