@@ -22,6 +22,12 @@ pub enum OpCode {
     Greater,
     Less,
 
+    Print,
+    Pop,
+    DefineGlobal,
+    GetGlobal,
+    SetGlobal,
+
     Unknown,
 }
 
@@ -31,8 +37,20 @@ impl OpCode {
             OpCode::Subtract => Some(|a, b| a - b),
             OpCode::Multiply => Some(|a, b| a * b),
             OpCode::Divide => Some(|a, b| a / b),
-            OpCode::Greater => Some(|a, b| Ok(Value::from(a > b))),
-            OpCode::Less => Some(|a, b| Ok(Value::from(a < b))),
+            OpCode::Greater => Some(|a, b| {
+                if a.is_number() && b.is_number() {
+                    Ok(Value::from(a > b))
+                } else {
+                    Err(OperationError("Operands must be numbers.".to_string()))
+                }
+            }),
+            OpCode::Less => Some(|a, b| {
+                if a.is_number() && b.is_number() {
+                    Ok(Value::from(a < b))
+                } else {
+                    Err(OperationError("Operands must be numbers.".to_string()))
+                }
+            }),
             _ => None,
         }
     }

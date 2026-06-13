@@ -20,6 +20,10 @@ pub struct VM {
     stack: Stack<Value>,
     objects: *mut Obj,
     strings: HashTable,
+    globals: HashTable,
+
+    #[cfg(test)]
+    output: Vec<String>,
 }
 
 impl VM {
@@ -30,6 +34,10 @@ impl VM {
             stack: Stack::default(),
             objects: std::ptr::null_mut(),
             strings: HashTable::new(),
+            globals: HashTable::new(),
+
+            #[cfg(test)]
+            output: Vec::new(),
         }
     }
 
@@ -132,14 +140,62 @@ impl VM {
                 OpCode::False => self.stack.push(Value::from(false)),
                 OpCode::True => self.stack.push(Value::from(true)),
                 OpCode::Nil => self.stack.push(Value::from(())),
-                OpCode::Return => {
+                OpCode::Return => return InterpretResult::Ok,
+                OpCode::Print => {
                     let value = self.stack.pop();
+                    #[cfg(test)]
+                    self.output.push(value.to_string());
                     println!("{}", value);
-                    return InterpretResult::Ok(value.to_string());
+                }
+                OpCode::Pop => {
+                    self.stack.pop();
+                }
+                OpCode::DefineGlobal => {
+                    let position = unsafe { *self.ip } as usize;
+                    self.ip = unsafe { self.ip.add(1) };
+
+                    let name = unsafe { &*self.chunk }.values[position].as_string();
+                    self.globals.set(name, self.stack[0].clone());
+                    let _ = self.stack.pop();
+                }
+                OpCode::GetGlobal => {
+                    let position = unsafe { *self.ip } as usize;
+                    self.ip = unsafe { self.ip.add(1) };
+
+                    let name = unsafe { &*self.chunk }.values[position].as_string();
+                    match self.globals.get(name) {
+                        Some(value) => self.stack.push(unsafe { (*value).clone() }),
+                        None => {
+                            self.runtime_error(&format!(
+                                "Undefined variable '{}'.",
+                                Value::from(name).to_string()
+                            ));
+                            return InterpretResult::RuntimeError;
+                        }
+                    }
+                }
+                OpCode::SetGlobal => {
+                    let position = unsafe { *self.ip } as usize;
+                    self.ip = unsafe { self.ip.add(1) };
+
+                    let name = unsafe { &*self.chunk }.values[position].as_string();
+                    if self.globals.set(name, self.stack[0].clone()) {
+                        self.globals.delete(name);
+                        self.runtime_error(&format!(
+                            "Undefined variable '{}'.",
+                            Value::from(name).to_string()
+                        ));
+                        return InterpretResult::RuntimeError;
+                    };
                 }
                 OpCode::Unknown => panic!("Something went wrong running the bytecode"),
             }
         }
+    }
+
+    #[cfg(test)]
+    fn output(&self) -> &[String] {
+        &self.output
     }
 
     pub fn free(&mut self) {
@@ -151,6 +207,7 @@ impl VM {
         }
 
         self.strings.free();
+        self.globals.free();
     }
 
     fn runtime_error(&mut self, message: &str) {
@@ -169,7 +226,7 @@ impl VM {
 
 #[derive(Debug, PartialEq)]
 pub enum InterpretResult {
-    Ok(String),
+    Ok,
     CompileError,
     RuntimeError,
 }
@@ -177,7 +234,7 @@ pub enum InterpretResult {
 impl InterpretResult {
     pub fn to_exit_code(&self) -> i32 {
         match self {
-            InterpretResult::Ok(_) => 0,
+            InterpretResult::Ok => 0,
             InterpretResult::CompileError => 65,
             InterpretResult::RuntimeError => 70,
         }
@@ -193,7 +250,7 @@ mod tests {
     #[test]
     fn test_interpret_compile_error() {
         let mut vm = VM::new();
-        let source = CString::new("1>").expect("Input doesn't contain null bytes");
+        let source = CString::new("print 1>;").expect("Input doesn't contain null bytes");
         let result = vm.interpret(source.as_bytes_with_nul().as_ptr() as *const AsciiChar);
         assert_eq!(result, InterpretResult::CompileError);
     }
@@ -201,7 +258,7 @@ mod tests {
     #[test]
     fn test_interpret_runtime_error() {
         let mut vm = VM::new();
-        let source = CString::new("true + false").expect("Input doesn't contain null bytes");
+        let source = CString::new("print true + false;").expect("Input doesn't contain null bytes");
         let result = vm.interpret(source.as_bytes_with_nul().as_ptr() as *const AsciiChar);
         assert_eq!(result, InterpretResult::RuntimeError);
     }
@@ -214,9 +271,10 @@ mod tests {
                     let (source, expected) = $data;
 
                     let mut vm = VM::new();
-                    let source = CString::new(source).expect("Input doesn't contain null bytes");
+                    let source = CString::new(format!("print {};", source)).expect("Input doesn't contain null bytes");
                     let result = vm.interpret(source.as_bytes_with_nul().as_ptr() as *const AsciiChar);
-                    assert_eq!(result, InterpretResult::Ok(String::from(expected)));
+                    assert_eq!(result, InterpretResult::Ok);
+                    assert_eq!(vm.output(), &[expected.to_string()]);
 
                     vm.free();
                 }

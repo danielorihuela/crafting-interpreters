@@ -42,7 +42,7 @@ impl Scanner {
             b'"' => self.string(),
             x if x.is_ascii_digit() => self.number(),
             x if x.is_ascii_alphabetic() || x == b'_' => self.identifier(),
-            _ => self.error_token("Unexpected character."),
+            _ => self.error_token(b"Unexpected character.\0"),
         }
     }
 
@@ -83,7 +83,7 @@ impl Scanner {
             self.advance();
             self.make_token(TokenType::String)
         } else {
-            self.error_token("Unterminated string.")
+            self.error_token(b"Unterminated string.\0")
         }
     }
 
@@ -162,11 +162,12 @@ impl Scanner {
         }
     }
 
-    fn error_token(&self, message: &str) -> Token {
+    fn error_token(&self, message: &'static [u8]) -> Token {
         Token {
             ttype: TokenType::Error,
             start: message.as_ptr(),
             length: message.len(),
+
             line: self.line,
         }
     }

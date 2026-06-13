@@ -47,9 +47,10 @@ impl<'a> Parser<'a> {
 
         self.chunk = chunk;
         self.advance();
-        self.expression();
-        let error_message = CString::new("Expect end of expression.").unwrap();
-        self.consume(TokenType::Eof, error_message.as_bytes_with_nul().as_ptr());
+
+        while !self.match_type(TokenType::Eof) {
+            self.declaration();
+        }
 
         self.end_compiler();
 
@@ -69,15 +70,132 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn declaration(&mut self) {
+        if self.match_type(TokenType::Var) {
+            self.var_declaration();
+        } else {
+            self.statement();
+        }
+
+        if self.panic_mode {
+            self.synchronize();
+        }
+    }
+
+    fn var_declaration(&mut self) {
+        let global = self.parse_variable("Expect variable name.");
+
+        if self.match_type(TokenType::Equal) {
+            self.expression();
+        } else {
+            self.emit_byte(OpCode::Nil);
+        }
+        self.consume(
+            TokenType::Semicolon,
+            CString::new("Expect ';' after variable declaration.")
+                .unwrap()
+                .as_bytes_with_nul()
+                .as_ptr(),
+        );
+
+        self.define_variable(global);
+    }
+
+    fn parse_variable(&mut self, error_message: &str) -> u8 {
+        self.consume(
+            TokenType::Identifier,
+            CString::new(error_message)
+                .unwrap()
+                .as_bytes_with_nul()
+                .as_ptr(),
+        );
+
+        self.identifier_constant()
+    }
+
+    fn identifier_constant(&mut self) -> u8 {
+        let obj_string = ObjString::new(
+            self.previous.start,
+            self.previous.length,
+            self.objects,
+            self.strings,
+        );
+        let value = Value::from(obj_string);
+        self.make_constant(value)
+    }
+
+    fn define_variable(&mut self, global: u8) {
+        self.emit_bytes(OpCode::DefineGlobal, global);
+    }
+
+    fn statement(&mut self) {
+        if self.match_type(TokenType::Print) {
+            self.print_statement();
+        } else {
+            self.expression_statement();
+        }
+    }
+
+    fn print_statement(&mut self) {
+        self.expression();
+        self.consume(
+            TokenType::Semicolon,
+            CString::new("Expect ';' after value.")
+                .unwrap()
+                .as_bytes_with_nul()
+                .as_ptr(),
+        );
+        self.emit_byte(OpCode::Print);
+    }
+
+    fn expression_statement(&mut self) {
+        self.expression();
+        self.consume(
+            TokenType::Semicolon,
+            CString::new("Expect ';' after expression.")
+                .unwrap()
+                .as_bytes_with_nul()
+                .as_ptr(),
+        );
+        self.emit_byte(OpCode::Pop);
+    }
+
+    fn synchronize(&mut self) {
+        self.panic_mode = false;
+
+        while self.current.ttype != TokenType::Eof {
+            if self.previous.ttype == TokenType::Semicolon {
+                return;
+            }
+
+            match self.current.ttype {
+                TokenType::Class
+                | TokenType::Fun
+                | TokenType::Var
+                | TokenType::For
+                | TokenType::If
+                | TokenType::While
+                | TokenType::Print
+                | TokenType::Return => return,
+                _ => (),
+            }
+
+            self.advance();
+        }
+    }
+
     fn expression(&mut self) {
         self.parse_precedence(Precedence::Assignment);
     }
 
     fn parse_precedence(&mut self, precedence: Precedence) {
         self.advance();
-        let prefix_rule = self.get_rule(self.previous.ttype.clone()).prefix;
+        let can_assign = precedence.clone() as u8 <= Precedence::Assignment as u8;
+        let prefix_rule = self
+            .get_rule(self.previous.ttype.clone(), can_assign)
+            .prefix;
         if let Some(prefix) = prefix_rule {
-            prefix(self);
+            prefix(self, can_assign);
         } else {
             self.error(
                 CString::new("Expect expression.")
@@ -88,13 +206,25 @@ impl<'a> Parser<'a> {
             return;
         }
 
-        while precedence.clone() as u8 <= self.get_rule(self.current.ttype.clone()).precedence as u8
+        while precedence.clone() as u8
+            <= self
+                .get_rule(self.current.ttype.clone(), can_assign)
+                .precedence as u8
         {
             self.advance();
-            let infix_rule = self.get_rule(self.previous.ttype.clone()).infix;
+            let infix_rule = self.get_rule(self.previous.ttype.clone(), can_assign).infix;
             if let Some(infix) = infix_rule {
-                infix(self);
+                infix(self, can_assign);
             }
+        }
+
+        if can_assign && self.match_type(TokenType::Equal) {
+            self.error(
+                CString::new("Invalid assignment target.")
+                    .unwrap()
+                    .as_bytes_with_nul()
+                    .as_ptr(),
+            );
         }
     }
 
@@ -105,6 +235,15 @@ impl<'a> Parser<'a> {
         }
 
         self.error_at_current(message);
+    }
+
+    fn match_type(&mut self, ttype: TokenType) -> bool {
+        if self.current.ttype != ttype {
+            return false;
+        }
+
+        self.advance();
+        true
     }
 
     fn end_compiler(&mut self) {
@@ -118,14 +257,14 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn number(&mut self) {
+    fn number(&mut self, can_assign: bool) {
         let value = unsafe { from_raw_parts(self.previous.start, self.previous.length) };
         let value = unsafe { from_utf8_unchecked(value) };
         let value: f64 = value.parse().unwrap();
         self.emit_constant(Value::from(value));
     }
 
-    fn grouping(&mut self) {
+    fn grouping(&mut self, can_assign: bool) {
         self.expression();
         self.consume(
             TokenType::RightParen,
@@ -136,7 +275,7 @@ impl<'a> Parser<'a> {
         );
     }
 
-    fn unary(&mut self) {
+    fn unary(&mut self, can_assign: bool) {
         let operator_type = self.previous.ttype.clone();
 
         self.parse_precedence(Precedence::Unary);
@@ -148,10 +287,10 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn binary(&mut self) {
+    fn binary(&mut self, can_assign: bool) {
         let operator_type = self.previous.ttype.clone();
 
-        let rule = self.get_rule(operator_type.clone());
+        let rule = self.get_rule(operator_type.clone(), can_assign);
         self.parse_precedence(Precedence::from(rule.precedence as u8 + 1));
 
         match operator_type {
@@ -169,7 +308,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn literal(&mut self) {
+    fn literal(&mut self, can_assign: bool) {
         match self.previous.ttype.clone() {
             TokenType::False => self.emit_byte(OpCode::False),
             TokenType::True => self.emit_byte(OpCode::True),
@@ -178,7 +317,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn string(&mut self) {
+    fn string(&mut self, can_assign: bool) {
         let start = unsafe { self.previous.start.add(1) };
         let end = self.previous.length - 2;
         let string = ObjString::new(start, end, self.objects, self.strings);
@@ -186,51 +325,66 @@ impl<'a> Parser<'a> {
         self.emit_constant(obj);
     }
 
-    fn get_rule(&self, ttype: TokenType) -> ParseRule {
+    fn variable(&mut self, can_assign: bool) {
+        self.named_variable(can_assign);
+    }
+
+    fn named_variable(&mut self, can_assign: bool) {
+        let arg = self.identifier_constant();
+
+        if can_assign && self.match_type(TokenType::Equal) {
+            self.expression();
+            self.emit_bytes(OpCode::SetGlobal, arg);
+        } else {
+            self.emit_bytes(OpCode::GetGlobal, arg);
+        }
+    }
+
+    fn get_rule(&self, ttype: TokenType, can_assign: bool) -> ParseRule {
         match ttype {
             TokenType::LeftParen => ParseRule {
-                prefix: Some(|parser| parser.grouping()),
+                prefix: Some(|parser, can_assign| parser.grouping(can_assign)),
                 infix: None,
                 precedence: Precedence::None,
             },
             TokenType::Minus => ParseRule {
-                prefix: Some(|parser| parser.unary()),
-                infix: Some(|parser| parser.binary()),
+                prefix: Some(|parser, can_assign| parser.unary(can_assign)),
+                infix: Some(|parser, can_assign| parser.binary(can_assign)),
                 precedence: Precedence::Term,
             },
             TokenType::Plus => ParseRule {
                 prefix: None,
-                infix: Some(|parser| parser.binary()),
+                infix: Some(|parser, can_assign| parser.binary(can_assign)),
                 precedence: Precedence::Term,
             },
             TokenType::Star => ParseRule {
                 prefix: None,
-                infix: Some(|parser| parser.binary()),
+                infix: Some(|parser, can_assign| parser.binary(can_assign)),
                 precedence: Precedence::Factor,
             },
             TokenType::Slash => ParseRule {
                 prefix: None,
-                infix: Some(|parser| parser.binary()),
+                infix: Some(|parser, can_assign| parser.binary(can_assign)),
                 precedence: Precedence::Factor,
             },
             TokenType::Number => ParseRule {
-                prefix: Some(|parser| parser.number()),
+                prefix: Some(|parser, can_assign| parser.number(can_assign)),
                 infix: None,
                 precedence: Precedence::None,
             },
             TokenType::True | TokenType::False | TokenType::Nil => ParseRule {
-                prefix: Some(|parser| parser.literal()),
+                prefix: Some(|parser, can_assign| parser.literal(can_assign)),
                 infix: None,
                 precedence: Precedence::None,
             },
             TokenType::Bang => ParseRule {
-                prefix: Some(|parser| parser.unary()),
+                prefix: Some(|parser, can_assign| parser.unary(can_assign)),
                 infix: None,
                 precedence: Precedence::None,
             },
             TokenType::BangEqual | TokenType::EqualEqual => ParseRule {
                 prefix: None,
-                infix: Some(|parser| parser.binary()),
+                infix: Some(|parser, can_assign| parser.binary(can_assign)),
                 precedence: Precedence::Equality,
             },
             TokenType::Greater
@@ -238,11 +392,16 @@ impl<'a> Parser<'a> {
             | TokenType::Less
             | TokenType::LessEqual => ParseRule {
                 prefix: None,
-                infix: Some(|parser| parser.binary()),
+                infix: Some(|parser, can_assign| parser.binary(can_assign)),
                 precedence: Precedence::Comparison,
             },
             TokenType::String => ParseRule {
-                prefix: Some(|parser| parser.string()),
+                prefix: Some(|parser, can_assign| parser.string(can_assign)),
+                infix: None,
+                precedence: Precedence::None,
+            },
+            TokenType::Identifier => ParseRule {
+                prefix: Some(|parser, can_assign| parser.variable(can_assign)),
                 infix: None,
                 precedence: Precedence::None,
             },
@@ -310,12 +469,12 @@ impl<'a> Parser<'a> {
         } else if token.ttype == TokenType::Error {
         } else {
             let s = unsafe { from_raw_parts(token.start, token.length) };
-            let s = unsafe { from_utf8_unchecked(s) };
+            let s = String::from_utf8_lossy(s);
             eprint!(" at '{}'", s);
         }
 
         let s = unsafe { std::ffi::CStr::from_ptr(message as *const i8) };
-        eprintln!(": {}", s.to_str().unwrap());
+        eprintln!(": {}", s.to_string_lossy());
         self.had_error = true;
     }
 }
@@ -347,8 +506,8 @@ impl From<u8> for Precedence {
 }
 
 struct ParseRule {
-    prefix: Option<fn(&mut Parser)>,
-    infix: Option<fn(&mut Parser)>,
+    prefix: Option<fn(&mut Parser, bool)>,
+    infix: Option<fn(&mut Parser, bool)>,
     precedence: Precedence,
 }
 
@@ -382,73 +541,81 @@ mod tests {
 
     parse_tests! {
         unary: (
-            "-3",
+            "-3;",
             vec![
                 OpCode::Constant.into(), 0,
                 OpCode::Negate.into(),
+                OpCode::Pop.into(),
                 OpCode::Return.into(),
             ]
         ),
         addition: (
-            "2 + 3",
+            "2 + 3;",
             vec![
                 OpCode::Constant.into(), 0,
                 OpCode::Constant.into(), 1,
                 OpCode::Add.into(),
+                OpCode::Pop.into(),
                 OpCode::Return.into(),
             ]
         ),
         subtraction: (
-            "5 - 2",
+            "5 - 2;",
             vec![
                 OpCode::Constant.into(), 0,
                 OpCode::Constant.into(), 1,
                 OpCode::Subtract.into(),
+                OpCode::Pop.into(),
                 OpCode::Return.into(),
             ]
         ),
         multiplication: (
-            "2 * 3",
+            "2 * 3;",
             vec![
                 OpCode::Constant.into(), 0,
                 OpCode::Constant.into(), 1,
                 OpCode::Multiply.into(),
+                OpCode::Pop.into(),
                 OpCode::Return.into(),
             ]
         ),
         division: (
-            "6 / 2",
+            "6 / 2;",
             vec![
                 OpCode::Constant.into(), 0,
                 OpCode::Constant.into(), 1,
                 OpCode::Divide.into(),
+                OpCode::Pop.into(),
                 OpCode::Return.into(),
             ]
         ),
         grouping: (
-            "(2 + 3) * 4",
+            "(2 + 3) * 4;",
             vec![
                 OpCode::Constant.into(), 0,
                 OpCode::Constant.into(), 1,
                 OpCode::Add.into(),
                 OpCode::Constant.into(), 2,
                 OpCode::Multiply.into(),
+                OpCode::Pop.into(),
                 OpCode::Return.into(),
             ]
         ),
         literal: (
-            "true",
+            "true;",
             vec![
                 OpCode::True,
-                OpCode::Return,
+                OpCode::Pop.into(),
+                OpCode::Return.into(),
             ]
         ),
         not: (
-            "!true",
+            "!true;",
             vec![
                 OpCode::True,
                 OpCode::Not,
-                OpCode::Return,
+                OpCode::Pop.into(),
+                OpCode::Return.into(),
             ]
         ),
         not_equal: (
@@ -458,6 +625,7 @@ mod tests {
                 OpCode::Constant.into(), 1,
                 OpCode::Equal.into(),
                 OpCode::Not.into(),
+                OpCode::Pop.into(),
                 OpCode::Return.into(),
             ]
         ),
@@ -467,6 +635,7 @@ mod tests {
                 OpCode::Constant.into(), 0,
                 OpCode::Constant.into(), 1,
                 OpCode::Equal.into(),
+                OpCode::Pop.into(),
                 OpCode::Return.into(),
             ]
         ),
@@ -476,6 +645,7 @@ mod tests {
                 OpCode::Constant.into(), 0,
                 OpCode::Constant.into(), 1,
                 OpCode::Greater.into(),
+                OpCode::Pop.into(),
                 OpCode::Return.into(),
             ]
         ),
@@ -486,6 +656,7 @@ mod tests {
                 OpCode::Constant.into(), 1,
                 OpCode::Less.into(),
                 OpCode::Not.into(),
+                OpCode::Pop.into(),
                 OpCode::Return.into(),
             ]
         ),
@@ -495,6 +666,7 @@ mod tests {
                 OpCode::Constant.into(), 0,
                 OpCode::Constant.into(), 1,
                 OpCode::Less.into(),
+                OpCode::Pop.into(),
                 OpCode::Return.into(),
             ]
         ),
@@ -505,6 +677,7 @@ mod tests {
                 OpCode::Constant.into(), 1,
                 OpCode::Greater.into(),
                 OpCode::Not.into(),
+                OpCode::Pop.into(),
                 OpCode::Return.into(),
             ]
         ),

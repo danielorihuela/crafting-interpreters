@@ -154,7 +154,7 @@ impl From<*mut ObjString> for Value {
 }
 
 #[derive(Debug)]
-pub struct OperationError(String);
+pub struct OperationError(pub String);
 
 impl Deref for OperationError {
     type Target = String;
@@ -174,7 +174,7 @@ impl Add for Value {
             Ok(Value::from(self.as_number() + rhs.as_number()))
         } else {
             Err(OperationError(
-                "Operands must be numbers or strings.".to_string(),
+                "Operands must be two numbers or two strings.".to_string(),
             ))
         }
     }
@@ -220,20 +220,6 @@ impl PartialOrd for Value {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         if self.is_number() && other.is_number() {
             self.as_number().partial_cmp(&other.as_number())
-        } else if self.is_string() && other.is_string() {
-            let a = unsafe {
-                std::str::from_utf8_unchecked(std::slice::from_raw_parts(
-                    (*self.as_string()).chars,
-                    (*self.as_string()).length,
-                ))
-            };
-            let b = unsafe {
-                std::str::from_utf8_unchecked(std::slice::from_raw_parts(
-                    (*other.as_string()).chars,
-                    (*other.as_string()).length,
-                ))
-            };
-            a.partial_cmp(b)
         } else {
             None
         }
