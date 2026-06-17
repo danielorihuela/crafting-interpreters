@@ -54,6 +54,16 @@ pub mod debug {
                 println!("{:<16} {:4}", opcode.to_string(), chunk.code[offset + 1]);
                 offset + 2
             }
+            OpCode::JumpIfFalse | OpCode::Jump | OpCode::Loop => {
+                let jump = (chunk.code[offset + 1] as u16) << 8 | chunk.code[offset + 2] as u16;
+                println!(
+                    "{:<16} {:4} -> {}",
+                    opcode.to_string(),
+                    offset,
+                    offset + 3 + jump as usize
+                );
+                offset + 3
+            }
             OpCode::Unknown => {
                 println!("Unknown opcode {}", instruction);
                 offset + 1

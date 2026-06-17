@@ -206,6 +206,35 @@ impl VM {
 
                     self.stack[slot] = self.stack.peek(0).clone();
                 }
+                OpCode::JumpIfFalse => {
+                    let offset_0 = unsafe { *self.ip } as usize;
+                    let offset_1 = unsafe { *self.ip.add(1) } as usize;
+                    self.ip = unsafe { self.ip.add(2) };
+
+                    let offset = (offset_0 << 8) | offset_1;
+
+                    if self.stack.peek(0).is_falsey() {
+                        self.ip = unsafe { self.ip.add(offset) };
+                    }
+                }
+                OpCode::Jump => {
+                    let offset_0 = unsafe { *self.ip } as usize;
+                    let offset_1 = unsafe { *self.ip.add(1) } as usize;
+                    self.ip = unsafe { self.ip.add(2) };
+
+                    let offset = (offset_0 << 8) | offset_1;
+
+                    self.ip = unsafe { self.ip.add(offset) };
+                }
+                OpCode::Loop => {
+                    let offset_0 = unsafe { *self.ip } as usize;
+                    let offset_1 = unsafe { *self.ip.add(1) } as usize;
+                    self.ip = unsafe { self.ip.add(2) };
+
+                    let offset = (offset_0 << 8) | offset_1;
+
+                    self.ip = unsafe { self.ip.sub(offset) };
+                }
                 OpCode::Unknown => panic!("Something went wrong running the bytecode"),
             }
         }

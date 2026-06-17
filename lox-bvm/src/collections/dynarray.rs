@@ -1,4 +1,7 @@
-use std::{fmt::Debug, ops::Index};
+use std::{
+    fmt::Debug,
+    ops::{Index, IndexMut},
+};
 
 use crate::memory::array::{free_array, grow_array, grow_capacity};
 
@@ -42,6 +45,12 @@ impl<T> Index<usize> for DynArray<T> {
 
     fn index(&self, index: usize) -> &Self::Output {
         unsafe { &*self.data.add(index) }
+    }
+}
+
+impl<T> IndexMut<usize> for DynArray<T> {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        unsafe { &mut *self.data.add(index) }
     }
 }
 

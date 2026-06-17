@@ -30,6 +30,10 @@ pub enum OpCode {
     GetLocal,
     SetLocal,
 
+    JumpIfFalse,
+    Jump,
+    Loop,
+
     Unknown,
 }
 
