@@ -6,21 +6,19 @@ use crate::{
     scanner::Scanner,
     types::{
         TokenType,
-        chunk::Chunk,
         opcode::OpCode,
         token::Token,
-        value::{Value, obj::Obj, string::ObjString},
+        value::{Value, function::ObjFunction, obj::Obj, string::ObjString},
     },
 };
 
 pub struct Parser<'a> {
     scanner: &'a mut Scanner,
-    compiler: &'a mut Compiler,
+    compiler: *mut Compiler,
 
     current: Token,
     previous: Token,
 
-    chunk: *mut Chunk,
     objects: *mut *mut Obj,
     strings: *mut HashTable,
 
@@ -31,7 +29,7 @@ pub struct Parser<'a> {
 impl<'a> Parser<'a> {
     pub fn new(
         scanner: &'a mut Scanner,
-        compiler: &'a mut Compiler,
+        compiler: *mut Compiler,
         objects: *mut *mut Obj,
         strings: *mut HashTable,
     ) -> Self {
@@ -40,7 +38,6 @@ impl<'a> Parser<'a> {
             compiler,
             current: Token::default(),
             previous: Token::default(),
-            chunk: std::ptr::null_mut(),
             objects,
             strings,
             had_error: false,
@@ -48,20 +45,23 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub fn compile(&mut self, chunk: &mut Chunk) -> bool {
+    pub fn compile(&mut self) -> *mut ObjFunction {
         self.had_error = false;
         self.panic_mode = false;
 
-        self.chunk = chunk;
         self.advance();
 
         while !self.match_type(TokenType::Eof) {
             self.declaration();
         }
 
-        self.end_compiler();
+        let function = self.end_compiler();
 
-        !self.had_error
+        if !self.had_error {
+            function
+        } else {
+            std::ptr::null_mut()
+        }
     }
 
     fn advance(&mut self) {
@@ -78,7 +78,9 @@ impl<'a> Parser<'a> {
     }
 
     fn declaration(&mut self) {
-        if self.match_type(TokenType::Var) {
+        if self.match_type(TokenType::Fun) {
+            self.fun_declaration();
+        } else if self.match_type(TokenType::Var) {
             self.var_declaration();
         } else {
             self.statement();
@@ -87,6 +89,76 @@ impl<'a> Parser<'a> {
         if self.panic_mode {
             self.synchronize();
         }
+    }
+
+    fn fun_declaration(&mut self) {
+        let global = self.parse_variable("Expect function name.");
+        self.mark_initialized();
+        self.function(FunctionType::Function);
+        self.define_variable(global);
+    }
+
+    fn function(&mut self, ftype: FunctionType) {
+        let compiler = Compiler::new(
+            ftype,
+            self.objects,
+            self.strings,
+            self.compiler,
+            self.previous.start,
+            self.previous.length,
+        );
+        self.compiler = Box::into_raw(Box::new(compiler));
+
+        self.begin_scope();
+
+        self.consume(
+            TokenType::LeftParen,
+            CString::new("Expect '(' after function name.")
+                .unwrap()
+                .as_bytes_with_nul()
+                .as_ptr(),
+        );
+
+        if self.current.ttype != TokenType::RightParen {
+            loop {
+                unsafe { (*(*self.compiler).function).arity += 1 };
+                if unsafe { (*(*self.compiler).function).arity } > 255 {
+                    self.error_at_current(
+                        CString::new("Can't have more than 255 parameters.")
+                            .unwrap()
+                            .as_bytes_with_nul()
+                            .as_ptr(),
+                    );
+                }
+
+                let constant = self.parse_variable("Expect parameter name.");
+                self.define_variable(constant);
+
+                if !self.match_type(TokenType::Comma) {
+                    break;
+                }
+            }
+        }
+
+        self.consume(
+            TokenType::RightParen,
+            CString::new("Expect ')' after parameters.")
+                .unwrap()
+                .as_bytes_with_nul()
+                .as_ptr(),
+        );
+        self.consume(
+            TokenType::LeftBrace,
+            CString::new("Expect '{' before function body.")
+                .unwrap()
+                .as_bytes_with_nul()
+                .as_ptr(),
+        );
+        self.block();
+
+        let function = self.end_compiler();
+        let constant = self.make_constant(Value::from(function));
+        self.emit_bytes(OpCode::Constant, constant);
     }
 
     fn var_declaration(&mut self) {
@@ -108,13 +180,13 @@ impl<'a> Parser<'a> {
     }
 
     fn declare_variable(&mut self) {
-        if self.compiler.scope_depth == 0 {
+        if unsafe { (*self.compiler).scope_depth } == 0 {
             return;
         }
 
-        for i in (0..self.compiler.local_count).rev() {
-            let local = &self.compiler.locals[i as usize];
-            if local.depth != -1 && local.depth < self.compiler.scope_depth {
+        for i in (0..unsafe { (*self.compiler).local_count }).rev() {
+            let local = &unsafe { &(*self.compiler).locals[i] };
+            if local.depth != -1 && local.depth < unsafe { (*self.compiler).scope_depth } {
                 break;
             }
 
@@ -143,7 +215,7 @@ impl<'a> Parser<'a> {
     }
 
     fn add_local(&mut self) {
-        if self.compiler.local_count == u8::MAX {
+        if unsafe { (*self.compiler).local_count } == (u8::MAX as usize + 1) {
             self.error(
                 CString::new("Too many local variables in function.")
                     .unwrap()
@@ -153,10 +225,10 @@ impl<'a> Parser<'a> {
             return;
         }
 
-        let local = &mut self.compiler.locals[self.compiler.local_count as usize];
+        let local = &mut unsafe { &mut (*self.compiler).locals[(*self.compiler).local_count] };
         local.name = self.previous.clone();
         local.depth = -1;
-        self.compiler.local_count += 1;
+        unsafe { (*self.compiler).local_count += 1 };
     }
 
     fn parse_variable(&mut self, error_message: &str) -> u8 {
@@ -169,7 +241,7 @@ impl<'a> Parser<'a> {
         );
 
         self.declare_variable();
-        if self.compiler.scope_depth > 0 {
+        if unsafe { (*self.compiler).scope_depth } > 0 {
             return 0;
         }
 
@@ -188,7 +260,7 @@ impl<'a> Parser<'a> {
     }
 
     fn define_variable(&mut self, global: u8) {
-        if self.compiler.scope_depth > 0 {
+        if unsafe { (*self.compiler).scope_depth } > 0 {
             self.mark_initialized();
             return;
         }
@@ -197,8 +269,12 @@ impl<'a> Parser<'a> {
     }
 
     fn mark_initialized(&mut self) {
-        let local = &mut self.compiler.locals[self.compiler.local_count as usize - 1];
-        local.depth = self.compiler.scope_depth;
+        if unsafe { (*self.compiler).scope_depth } == 0 {
+            return;
+        }
+
+        let local = &mut unsafe { &mut (*self.compiler).locals[(*self.compiler).local_count - 1] };
+        local.depth = unsafe { (*self.compiler).scope_depth };
     }
 
     fn statement(&mut self) {
@@ -206,6 +282,8 @@ impl<'a> Parser<'a> {
             self.print_statement();
         } else if self.match_type(TokenType::If) {
             self.if_statement();
+        } else if self.match_type(TokenType::Return) {
+            self.return_statement();
         } else if self.match_type(TokenType::While) {
             self.while_statement();
         } else if self.match_type(TokenType::For) {
@@ -263,8 +341,33 @@ impl<'a> Parser<'a> {
         self.patch_jump(else_jump);
     }
 
+    fn return_statement(&mut self) {
+        if unsafe { &(*self.compiler).ftype } == &FunctionType::Script {
+            self.error(
+                CString::new("Can't return from top-level code.")
+                    .unwrap()
+                    .as_bytes_with_nul()
+                    .as_ptr(),
+            );
+        }
+
+        if self.match_type(TokenType::Semicolon) {
+            self.emit_return();
+        } else {
+            self.expression();
+            self.consume(
+                TokenType::Semicolon,
+                CString::new("Expect ';' after return value.")
+                    .unwrap()
+                    .as_bytes_with_nul()
+                    .as_ptr(),
+            );
+            self.emit_byte(OpCode::Return);
+        }
+    }
+
     fn while_statement(&mut self) {
-        let loop_start = unsafe { (*self.chunk).code.count };
+        let loop_start = unsafe { (*(*self.compiler).function).chunk.code.count };
         self.consume(
             TokenType::LeftParen,
             CString::new("Expect '(' after 'while'.")
@@ -307,7 +410,7 @@ impl<'a> Parser<'a> {
             self.expression_statement();
         }
 
-        let mut loop_start = unsafe { (*self.chunk).code.count };
+        let mut loop_start = unsafe { (*(*self.compiler).function).chunk.code.count };
         let mut exit_jump = -1;
         if !self.match_type(TokenType::Semicolon) {
             self.expression();
@@ -325,7 +428,7 @@ impl<'a> Parser<'a> {
 
         if !self.match_type(TokenType::RightParen) {
             let body_jump = self.emit_jump(OpCode::Jump);
-            let increment_start = unsafe { (*self.chunk).code.count };
+            let increment_start = unsafe { (*(*self.compiler).function).chunk.code.count };
             self.expression();
             self.emit_byte(OpCode::Pop);
             self.consume(
@@ -353,7 +456,7 @@ impl<'a> Parser<'a> {
     fn emit_loop(&mut self, loop_start: usize) {
         self.emit_byte(OpCode::Loop);
 
-        let offset = unsafe { (*self.chunk).code.count - loop_start + 2 };
+        let offset = unsafe { (*(*self.compiler).function).chunk.code.count - loop_start + 2 };
         if offset > u16::MAX as usize {
             self.error(
                 CString::new("Loop body too large.")
@@ -372,11 +475,11 @@ impl<'a> Parser<'a> {
         self.emit_byte(0xff);
         self.emit_byte(0xff);
 
-        unsafe { (*self.chunk).code.count - 2 }
+        unsafe { (*(*self.compiler).function).chunk.code.count - 2 }
     }
 
     fn patch_jump(&mut self, offset: usize) {
-        let jump = unsafe { (*self.chunk).code.count - offset - 2 };
+        let jump = unsafe { (*(*self.compiler).function).chunk.code.count - offset - 2 };
         if jump > u16::MAX as usize {
             self.error(
                 CString::new("Too much code to jump over.")
@@ -387,13 +490,13 @@ impl<'a> Parser<'a> {
         }
 
         unsafe {
-            (&mut (*self.chunk).code)[offset] = ((jump >> 8) & 0xff) as u8;
-            (&mut (*self.chunk).code)[offset + 1] = (jump & 0xff) as u8;
+            (&mut (*(*self.compiler).function).chunk.code)[offset] = ((jump >> 8) & 0xff) as u8;
+            (&mut (*(*self.compiler).function).chunk.code)[offset + 1] = (jump & 0xff) as u8;
         }
     }
 
     fn begin_scope(&mut self) {
-        self.compiler.scope_depth += 1;
+        unsafe { (*self.compiler).scope_depth += 1 };
     }
 
     fn block(&mut self) {
@@ -411,14 +514,15 @@ impl<'a> Parser<'a> {
     }
 
     fn end_scope(&mut self) {
-        self.compiler.scope_depth -= 1;
+        unsafe { (*self.compiler).scope_depth -= 1 };
 
-        while self.compiler.local_count > 0
-            && self.compiler.locals[self.compiler.local_count as usize - 1].depth
-                > self.compiler.scope_depth
-        {
+        while unsafe {
+            (*self.compiler).local_count > 0
+                && (*self.compiler).locals[(*self.compiler).local_count - 1].depth
+                    > (*self.compiler).scope_depth
+        } {
             self.emit_byte(OpCode::Pop);
-            self.compiler.local_count -= 1;
+            unsafe { (*self.compiler).local_count -= 1 };
         }
     }
 
@@ -520,15 +624,31 @@ impl<'a> Parser<'a> {
         true
     }
 
-    fn end_compiler(&mut self) {
+    fn end_compiler(&mut self) -> *mut ObjFunction {
         self.emit_return();
 
         #[cfg(debug_assertions)]
         {
             if !self.had_error {
-                unsafe { (*self.chunk).disassemble("code") };
+                let name = if unsafe { (*(*self.compiler).function).name.is_null() } {
+                    "script".to_string()
+                } else {
+                    let name = unsafe { (*(*self.compiler).function).name };
+                    let name = Value::from(name);
+                    name.to_string()
+                };
+                unsafe { (*(*self.compiler).function).chunk.disassemble(&name) };
             }
         }
+
+        let function = unsafe { (*self.compiler).function };
+        if unsafe { (*self.compiler).enclosing.is_null() } {
+            return function;
+        }
+
+        self.compiler = unsafe { &mut *(*self.compiler).enclosing };
+
+        function
     }
 
     fn number(&mut self, can_assign: bool) {
@@ -611,7 +731,7 @@ impl<'a> Parser<'a> {
             set_opcode = OpCode::SetLocal;
             get_opcode = OpCode::GetLocal;
         } else {
-            arg = self.identifier_constant() as i8;
+            arg = self.identifier_constant() as isize;
             set_opcode = OpCode::SetGlobal;
             get_opcode = OpCode::GetGlobal;
         }
@@ -624,9 +744,9 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn resolve_local(&mut self) -> i8 {
-        for i in (0..self.compiler.local_count).rev() {
-            let local = &self.compiler.locals[i as usize];
+    fn resolve_local(&mut self) -> isize {
+        for i in (0..unsafe { (*self.compiler).local_count }).rev() {
+            let local = unsafe { &(*self.compiler).locals[i] };
             if self.identifiers_equal(&local.name, &self.previous) {
                 if local.depth == -1 {
                     self.error(
@@ -636,7 +756,7 @@ impl<'a> Parser<'a> {
                             .as_ptr(),
                     );
                 }
-                return i as i8;
+                return i as isize;
             }
         }
 
@@ -661,12 +781,49 @@ impl<'a> Parser<'a> {
         self.patch_jump(end_jump);
     }
 
+    fn call(&mut self, can_assign: bool) {
+        let arg_count = self.argument_list();
+        self.emit_bytes(OpCode::Call, arg_count);
+    }
+
+    fn argument_list(&mut self) -> u8 {
+        let mut arg_count = 0;
+        if self.current.ttype != TokenType::RightParen {
+            loop {
+                self.expression();
+                if arg_count == 255 {
+                    self.error(
+                        CString::new("Can't have more than 255 arguments.")
+                            .unwrap()
+                            .as_bytes_with_nul()
+                            .as_ptr(),
+                    );
+                }
+                arg_count += 1;
+
+                if !self.match_type(TokenType::Comma) {
+                    break;
+                }
+            }
+        }
+
+        self.consume(
+            TokenType::RightParen,
+            CString::new("Expect ')' after arguments.")
+                .unwrap()
+                .as_bytes_with_nul()
+                .as_ptr(),
+        );
+
+        arg_count
+    }
+
     fn get_rule(&self, ttype: TokenType, can_assign: bool) -> ParseRule {
         match ttype {
             TokenType::LeftParen => ParseRule {
                 prefix: Some(|parser, can_assign| parser.grouping(can_assign)),
-                infix: None,
-                precedence: Precedence::None,
+                infix: Some(|parser, can_assign| parser.call(can_assign)),
+                precedence: Precedence::Call,
             },
             TokenType::Minus => ParseRule {
                 prefix: Some(|parser, can_assign| parser.unary(can_assign)),
@@ -745,10 +902,15 @@ impl<'a> Parser<'a> {
     }
 
     fn emit_byte(&mut self, b: impl Into<u8>) {
-        unsafe { (*self.chunk).write(b.into(), self.previous.line as usize) }
+        unsafe {
+            (*(*self.compiler).function)
+                .chunk
+                .write(b.into(), self.previous.line as usize)
+        }
     }
 
     fn emit_return(&mut self) {
+        self.emit_byte(OpCode::Nil);
         self.emit_byte(OpCode::Return);
     }
 
@@ -763,7 +925,7 @@ impl<'a> Parser<'a> {
     }
 
     fn make_constant(&mut self, value: Value) -> u8 {
-        let constant = unsafe { (*self.chunk).add_constant(value) };
+        let constant = unsafe { (*(*self.compiler).function).chunk.add_constant(value) };
         if constant > u8::MAX as usize {
             self.error(
                 CString::new("Too many constants in one chunk.")
@@ -843,9 +1005,14 @@ struct ParseRule {
 }
 
 pub struct Compiler {
-    locals: [Local; u8::MAX as usize],
-    local_count: u8,
+    locals: [Local; u8::MAX as usize + 1],
+    local_count: usize,
     scope_depth: i8,
+
+    function: *mut ObjFunction,
+    ftype: FunctionType,
+
+    enclosing: *mut Compiler,
 }
 
 #[derive(Clone)]
@@ -855,22 +1022,52 @@ pub struct Local {
 }
 
 impl Compiler {
-    pub fn new() -> Self {
+    pub fn new(
+        ftype: FunctionType,
+        objects: *mut *mut Obj,
+        strings: *mut HashTable,
+        enclosing: *mut Compiler,
+        chars: *const AsciiChar,
+        length: usize,
+    ) -> Self {
         let local = Local {
             name: Token::default(),
             depth: 0,
         };
-        Self {
-            locals: [0; u8::MAX as usize].map(|_| local.clone()),
-            local_count: 0,
+        let mut locals = [0; u8::MAX as usize + 1].map(|_| local.clone());
+        locals[0].depth = 0;
+        locals[0].name.start = b"" as *const AsciiChar;
+        locals[0].name.length = 0;
+        let compiler = Self {
+            locals,
+            local_count: 1,
             scope_depth: 0,
+            function: ObjFunction::new(objects),
+            ftype: ftype.clone(),
+            enclosing,
+        };
+
+        if ftype != FunctionType::Script {
+            unsafe { (*compiler.function).name = ObjString::new(chars, length, objects, strings) }
         }
+
+        compiler
     }
+}
+
+#[derive(PartialEq, Clone)]
+pub enum FunctionType {
+    Function,
+    Script,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use crate::collections::hashtable::HashTable;
+    use crate::types::chunk::Chunk;
+    use crate::types::value::obj::free_object;
 
     macro_rules! parse_tests {
         ($($name:ident: $value:expr,)*) => {
@@ -879,19 +1076,30 @@ mod tests {
                 fn $name() {
                     let (input, bytes) = $value;
 
+                    let mut objects: *mut Obj = std::ptr::null_mut();
+                    let mut strings = HashTable::new();
+
                     let source = CString::new(input).unwrap();
                     let scanner = &mut Scanner::new(source.as_bytes_with_nul().as_ptr());
-                    let compiler = &mut Compiler::new();
-                    let parser = &mut Parser::new(scanner, compiler, std::ptr::null_mut(), std::ptr::null_mut());
+                    let compiler = &mut Compiler::new(FunctionType::Script, &mut objects, &mut strings, std::ptr::null_mut(), std::ptr::null(), 0);
+                    let parser = &mut Parser::new(scanner, compiler, &mut objects, &mut strings);
 
-                    let chunk = &mut Chunk::default();
-                    parser.compile(chunk);
+                    let function = parser.compile();
 
                     let mut expected = Chunk::default();
                     for byte in bytes {
                         expected.write(byte.into(), 1);
                     }
-                    assert_eq!(chunk.code, expected.code);
+                    assert_eq!(unsafe { &(*function).chunk.code }, &expected.code);
+
+                    let mut object = objects;
+                    while !object.is_null() {
+                        let next = unsafe { (*object).next.0 };
+                        unsafe { free_object(object) };
+                        object = next;
+                    }
+
+                    strings.free();
                 }
             )*
         }
@@ -904,6 +1112,7 @@ mod tests {
                 OpCode::Constant.into(), 0,
                 OpCode::Negate.into(),
                 OpCode::Pop.into(),
+                OpCode::Nil.into(),
                 OpCode::Return.into(),
             ]
         ),
@@ -914,6 +1123,7 @@ mod tests {
                 OpCode::Constant.into(), 1,
                 OpCode::Add.into(),
                 OpCode::Pop.into(),
+                OpCode::Nil.into(),
                 OpCode::Return.into(),
             ]
         ),
@@ -924,6 +1134,7 @@ mod tests {
                 OpCode::Constant.into(), 1,
                 OpCode::Subtract.into(),
                 OpCode::Pop.into(),
+                OpCode::Nil.into(),
                 OpCode::Return.into(),
             ]
         ),
@@ -934,6 +1145,7 @@ mod tests {
                 OpCode::Constant.into(), 1,
                 OpCode::Multiply.into(),
                 OpCode::Pop.into(),
+                OpCode::Nil.into(),
                 OpCode::Return.into(),
             ]
         ),
@@ -944,6 +1156,7 @@ mod tests {
                 OpCode::Constant.into(), 1,
                 OpCode::Divide.into(),
                 OpCode::Pop.into(),
+                OpCode::Nil.into(),
                 OpCode::Return.into(),
             ]
         ),
@@ -956,6 +1169,7 @@ mod tests {
                 OpCode::Constant.into(), 2,
                 OpCode::Multiply.into(),
                 OpCode::Pop.into(),
+                OpCode::Nil.into(),
                 OpCode::Return.into(),
             ]
         ),
@@ -964,6 +1178,7 @@ mod tests {
             vec![
                 OpCode::True,
                 OpCode::Pop.into(),
+                OpCode::Nil.into(),
                 OpCode::Return.into(),
             ]
         ),
@@ -973,69 +1188,76 @@ mod tests {
                 OpCode::True,
                 OpCode::Not,
                 OpCode::Pop.into(),
+                OpCode::Nil.into(),
                 OpCode::Return.into(),
             ]
         ),
         not_equal: (
-            "2 != 3",
+            "2 != 3;",
             vec![
                 OpCode::Constant.into(), 0,
                 OpCode::Constant.into(), 1,
                 OpCode::Equal.into(),
                 OpCode::Not.into(),
                 OpCode::Pop.into(),
+                OpCode::Nil.into(),
                 OpCode::Return.into(),
             ]
         ),
         equal: (
-            "2 == 3",
+            "2 == 3;",
             vec![
                 OpCode::Constant.into(), 0,
                 OpCode::Constant.into(), 1,
                 OpCode::Equal.into(),
                 OpCode::Pop.into(),
+                OpCode::Nil.into(),
                 OpCode::Return.into(),
             ]
         ),
         greater: (
-            "2 > 3",
+            "2 > 3;",
             vec![
                 OpCode::Constant.into(), 0,
                 OpCode::Constant.into(), 1,
                 OpCode::Greater.into(),
                 OpCode::Pop.into(),
+                OpCode::Nil.into(),
                 OpCode::Return.into(),
             ]
         ),
         greater_equal: (
-            "2 >= 3",
+            "2 >= 3;",
             vec![
                 OpCode::Constant.into(), 0,
                 OpCode::Constant.into(), 1,
                 OpCode::Less.into(),
                 OpCode::Not.into(),
                 OpCode::Pop.into(),
+                OpCode::Nil.into(),
                 OpCode::Return.into(),
             ]
         ),
         less: (
-            "2 < 3",
+            "2 < 3;",
             vec![
                 OpCode::Constant.into(), 0,
                 OpCode::Constant.into(), 1,
                 OpCode::Less.into(),
                 OpCode::Pop.into(),
+                OpCode::Nil.into(),
                 OpCode::Return.into(),
             ]
         ),
         less_equal: (
-            "2 <= 3",
+            "2 <= 3;",
             vec![
                 OpCode::Constant.into(), 0,
                 OpCode::Constant.into(), 1,
                 OpCode::Greater.into(),
                 OpCode::Not.into(),
                 OpCode::Pop.into(),
+                OpCode::Nil.into(),
                 OpCode::Return.into(),
             ]
         ),

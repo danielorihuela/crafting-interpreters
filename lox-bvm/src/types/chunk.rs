@@ -50,7 +50,7 @@ pub mod debug {
                 print_constant_instructions(chunk, offset, opcode);
                 offset + 2
             }
-            OpCode::GetLocal | OpCode::SetLocal => {
+            OpCode::GetLocal | OpCode::SetLocal | OpCode::Call => {
                 println!("{:<16} {:4}", opcode.to_string(), chunk.code[offset + 1]);
                 offset + 2
             }

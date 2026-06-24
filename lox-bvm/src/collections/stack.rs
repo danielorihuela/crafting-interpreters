@@ -3,7 +3,9 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-const STACK_MAX: usize = 256;
+use crate::vm::FRAMES_MAX;
+
+const STACK_MAX: usize = FRAMES_MAX * u8::MAX as usize;
 
 pub struct Stack<T> {
     data: [MaybeUninit<T>; STACK_MAX],
@@ -34,6 +36,25 @@ impl<T> IndexMut<usize> for Stack<T> {
 }
 
 impl<T> Stack<T> {
+    pub fn len(&self) -> usize {
+        self.top
+    }
+
+    pub fn as_mut_ptr(&mut self) -> *mut T {
+        self.data.as_mut_ptr().cast::<T>()
+    }
+
+    pub fn truncate(&mut self, top: usize) {
+        assert!(top <= self.top, "cannot grow stack with truncate");
+        self.top = top;
+    }
+
+    pub unsafe fn truncate_to_ptr(&mut self, top: *mut T) {
+        let base = self.as_mut_ptr();
+        let new_top = unsafe { top.offset_from(base) } as usize;
+        self.truncate(new_top);
+    }
+
     pub fn peek(&self, distance: usize) -> &T {
         unsafe { &*self.data[self.top - 1 - distance].as_ptr() }
     }
@@ -80,5 +101,19 @@ mod tests {
         assert_eq!(stack.pop(), 2);
         assert_eq!(stack.pop(), 1);
         assert_eq!(stack.top, 0);
+    }
+
+    #[test]
+    fn test_stack_truncate_to_ptr() {
+        let mut stack = Stack::<i32>::default();
+        stack.push(1);
+        stack.push(2);
+        stack.push(3);
+
+        let new_top = unsafe { stack.as_mut_ptr().add(1) };
+        unsafe { stack.truncate_to_ptr(new_top) };
+
+        assert_eq!(stack.top, 1);
+        assert_eq!(stack.peek(0), &1);
     }
 }

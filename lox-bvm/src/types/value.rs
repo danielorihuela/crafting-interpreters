@@ -1,3 +1,5 @@
+pub mod function;
+pub mod native;
 pub mod obj;
 pub mod string;
 
@@ -9,6 +11,8 @@ use std::{
 use crate::types::{
     AsciiChar,
     value::{
+        function::ObjFunction,
+        native::ObjNative,
         obj::{Obj, ObjType},
         string::ObjString,
     },
@@ -56,6 +60,16 @@ impl Display for Value {
 
                         string.to_string()
                     }
+                    ObjType::Function => {
+                        let function = self.as_obj() as *mut ObjFunction;
+                        if unsafe { (*function).name.is_null() } {
+                            "<script>".to_string()
+                        } else {
+                            let value_name = Value::from(unsafe { (*function).name });
+                            format!("<fn {}>", value_name)
+                        }
+                    }
+                    ObjType::Native => "<native fn>".to_string(),
                 };
                 write!(f, "{}", data)
             }
@@ -153,6 +167,28 @@ impl From<*mut ObjString> for Value {
     }
 }
 
+impl From<*mut ObjFunction> for Value {
+    fn from(value: *mut ObjFunction) -> Self {
+        Self {
+            vtype: ValueType::Obj,
+            vunion: ValueUnion {
+                obj: value as *mut Obj,
+            },
+        }
+    }
+}
+
+impl From<*mut ObjNative> for Value {
+    fn from(value: *mut ObjNative) -> Self {
+        Self {
+            vtype: ValueType::Obj,
+            vunion: ValueUnion {
+                obj: value as *mut Obj,
+            },
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct OperationError(pub String);
 
@@ -239,6 +275,10 @@ impl Value {
         matches!(self.vtype, ValueType::Nil)
     }
 
+    pub fn is_falsey(&self) -> bool {
+        self.is_nil() || (self.is_bool() && !self.as_bool())
+    }
+
     pub fn is_obj(&self) -> bool {
         matches!(self.vtype, ValueType::Obj)
     }
@@ -253,6 +293,14 @@ impl Value {
 
     pub fn is_string(&self) -> bool {
         self.is_obj() && self.obj_type() == &ObjType::String
+    }
+
+    pub fn is_function(&self) -> bool {
+        self.is_obj() && self.obj_type() == &ObjType::Function
+    }
+
+    pub fn is_native(&self) -> bool {
+        self.is_obj() && self.obj_type() == &ObjType::Native
     }
 
     pub fn as_bool(&self) -> bool {
@@ -275,8 +323,12 @@ impl Value {
         unsafe { (*self.as_string()).chars }
     }
 
-    pub fn is_falsey(&self) -> bool {
-        self.is_nil() || (self.is_bool() && !self.as_bool())
+    pub fn as_function(&self) -> *mut ObjFunction {
+        self.as_obj() as *mut ObjFunction
+    }
+
+    pub fn as_native(&self) -> *mut ObjNative {
+        self.as_obj() as *mut ObjNative
     }
 }
 

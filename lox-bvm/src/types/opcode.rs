@@ -34,6 +34,8 @@ pub enum OpCode {
     Jump,
     Loop,
 
+    Call,
+
     Unknown,
 }
 

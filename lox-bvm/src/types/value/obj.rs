@@ -1,12 +1,17 @@
 use std::ops::{Deref, DerefMut};
+use std::ptr::drop_in_place;
 
 use crate::memory::alloc::reallocate;
 use crate::memory::array::free_array;
+use crate::types::value::function::ObjFunction;
+use crate::types::value::native::ObjNative;
 use crate::types::value::string::ObjString;
 
 #[derive(PartialEq)]
 pub enum ObjType {
     String,
+    Function,
+    Native,
 }
 
 pub struct Obj {
@@ -15,7 +20,7 @@ pub struct Obj {
 }
 
 pub fn allocate_object<T>(obj_type: ObjType, objects: *mut *mut Obj) -> *mut T {
-    let obj = reallocate(std::ptr::null_mut::<T>(), 0, size_of::<T>());
+    let obj = reallocate(std::ptr::null_mut::<T>(), 0, 1);
     let mut obj = ObjPtr(obj as *mut Obj);
 
     unsafe {
@@ -28,11 +33,25 @@ pub fn allocate_object<T>(obj_type: ObjType, objects: *mut *mut Obj) -> *mut T {
 }
 
 pub unsafe fn free_object(object: impl Into<ObjPtr>) {
-    let string = object.into().0 as *mut ObjString;
-    unsafe {
-        free_array((*string).chars, (*string).length + 1, (*string).length + 1);
-    };
-    reallocate(string, size_of::<ObjString>(), 0);
+    let object_ptr = object.into();
+    match &object_ptr.otype {
+        ObjType::String => {
+            let string = object_ptr.0 as *mut ObjString;
+            unsafe {
+                free_array((*string).chars, (*string).length + 1, (*string).length + 1);
+            };
+            reallocate(string, 1, 0);
+        }
+        ObjType::Function => {
+            let function = object_ptr.0 as *mut ObjFunction;
+            unsafe { drop_in_place(&mut (*function).chunk) };
+            reallocate(function, 1, 0);
+        }
+        ObjType::Native => {
+            let native = object_ptr.0 as *mut ObjNative;
+            reallocate(native, 1, 0);
+        }
+    }
 }
 
 pub struct ObjPtr(pub *mut Obj);

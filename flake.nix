@@ -102,6 +102,7 @@
           $dart tool/bin/test.dart chap21_global --interpreter ../lox-bvm/target/release/lox-bvm
           $dart tool/bin/test.dart chap22_local --interpreter ../lox-bvm/target/release/lox-bvm
           $dart tool/bin/test.dart chap23_jumping --interpreter ../lox-bvm/target/release/lox-bvm
+          $dart tool/bin/test.dart chap24_calls --interpreter ../lox-bvm/target/release/lox-bvm
           cd ..
 
           (cd craftinginterpreters/tool; $dart pub cache clean -f)
