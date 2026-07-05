@@ -1,7 +1,9 @@
+pub mod closure;
 pub mod function;
 pub mod native;
 pub mod obj;
 pub mod string;
+pub mod upvalue;
 
 use std::{
     fmt::{Debug, Display},
@@ -11,6 +13,7 @@ use std::{
 use crate::types::{
     AsciiChar,
     value::{
+        closure::ObjClosure,
         function::ObjFunction,
         native::ObjNative,
         obj::{Obj, ObjType},
@@ -69,7 +72,18 @@ impl Display for Value {
                             format!("<fn {}>", value_name)
                         }
                     }
+                    ObjType::Closure => {
+                        let closure = self.as_obj() as *mut ObjClosure;
+                        let function = unsafe { (*closure).function };
+                        if unsafe { (*function).name.is_null() } {
+                            "<script>".to_string()
+                        } else {
+                            let value_name = Value::from(unsafe { (*function).name });
+                            format!("<fn {}>", value_name)
+                        }
+                    }
                     ObjType::Native => "<native fn>".to_string(),
+                    ObjType::Upvalue => "upvalue".to_string(),
                 };
                 write!(f, "{}", data)
             }
@@ -180,6 +194,17 @@ impl From<*mut ObjFunction> for Value {
 
 impl From<*mut ObjNative> for Value {
     fn from(value: *mut ObjNative) -> Self {
+        Self {
+            vtype: ValueType::Obj,
+            vunion: ValueUnion {
+                obj: value as *mut Obj,
+            },
+        }
+    }
+}
+
+impl From<*mut ObjClosure> for Value {
+    fn from(value: *mut ObjClosure) -> Self {
         Self {
             vtype: ValueType::Obj,
             vunion: ValueUnion {
@@ -303,6 +328,10 @@ impl Value {
         self.is_obj() && self.obj_type() == &ObjType::Native
     }
 
+    pub fn is_closure(&self) -> bool {
+        self.is_obj() && self.obj_type() == &ObjType::Closure
+    }
+
     pub fn as_bool(&self) -> bool {
         unsafe { self.vunion.boolean }
     }
@@ -329,6 +358,10 @@ impl Value {
 
     pub fn as_native(&self) -> *mut ObjNative {
         self.as_obj() as *mut ObjNative
+    }
+
+    pub fn as_closure(&self) -> *mut ObjClosure {
+        self.as_obj() as *mut ObjClosure
     }
 }
 

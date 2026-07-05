@@ -108,6 +108,7 @@ impl<'a> Parser<'a> {
             self.previous.length,
         );
         self.compiler = Box::into_raw(Box::new(compiler));
+        let curr_compiler = unsafe { &mut *self.compiler };
 
         self.begin_scope();
 
@@ -158,7 +159,13 @@ impl<'a> Parser<'a> {
 
         let function = self.end_compiler();
         let constant = self.make_constant(Value::from(function));
-        self.emit_bytes(OpCode::Constant, constant);
+        self.emit_bytes(OpCode::Closure, constant);
+
+        for i in 0..unsafe { (*function).upvalue_count } {
+            let upvalue = &curr_compiler.upvalues[i];
+            self.emit_byte(if upvalue.is_local { 1 } else { 0 });
+            self.emit_byte(upvalue.index);
+        }
     }
 
     fn var_declaration(&mut self) {
@@ -228,6 +235,7 @@ impl<'a> Parser<'a> {
         let local = &mut unsafe { &mut (*self.compiler).locals[(*self.compiler).local_count] };
         local.name = self.previous.clone();
         local.depth = -1;
+        local.is_captured = false;
         unsafe { (*self.compiler).local_count += 1 };
     }
 
@@ -521,7 +529,11 @@ impl<'a> Parser<'a> {
                 && (*self.compiler).locals[(*self.compiler).local_count - 1].depth
                     > (*self.compiler).scope_depth
         } {
-            self.emit_byte(OpCode::Pop);
+            if unsafe { (*self.compiler).locals[(*self.compiler).local_count - 1].is_captured } {
+                self.emit_byte(OpCode::CloseUpvalue);
+            } else {
+                self.emit_byte(OpCode::Pop);
+            }
             unsafe { (*self.compiler).local_count -= 1 };
         }
     }
@@ -726,14 +738,21 @@ impl<'a> Parser<'a> {
     fn named_variable(&mut self, can_assign: bool) {
         let mut set_opcode = OpCode::SetGlobal;
         let mut get_opcode = OpCode::GetGlobal;
-        let mut arg = self.resolve_local();
+        let name = self.previous.clone();
+        let mut arg = resolve_local(self, self.compiler, &name);
         if arg != -1 {
             set_opcode = OpCode::SetLocal;
             get_opcode = OpCode::GetLocal;
         } else {
-            arg = self.identifier_constant() as isize;
-            set_opcode = OpCode::SetGlobal;
-            get_opcode = OpCode::GetGlobal;
+            arg = self.resolve_upvalue(self.compiler, &name);
+            if arg != -1 {
+                set_opcode = OpCode::SetUpvalue;
+                get_opcode = OpCode::GetUpvalue;
+            } else {
+                arg = self.identifier_constant() as isize;
+                set_opcode = OpCode::SetGlobal;
+                get_opcode = OpCode::GetGlobal;
+            }
         }
 
         if can_assign && self.match_type(TokenType::Equal) {
@@ -744,19 +763,32 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn resolve_local(&mut self) -> isize {
-        for i in (0..unsafe { (*self.compiler).local_count }).rev() {
-            let local = unsafe { &(*self.compiler).locals[i] };
-            if self.identifiers_equal(&local.name, &self.previous) {
-                if local.depth == -1 {
-                    self.error(
-                        CString::new("Can't read local variable in its own initializer.")
-                            .unwrap()
-                            .as_bytes_with_nul()
-                            .as_ptr(),
-                    );
+    fn resolve_upvalue(&mut self, compiler: *mut Compiler, name: &Token) -> isize {
+        if unsafe { (*compiler).enclosing.is_null() } {
+            return -1;
+        }
+
+        let enclosing = unsafe { &mut *(*compiler).enclosing };
+        let local = resolve_local(self, enclosing, name);
+        if local != -1 {
+            enclosing.locals[local as usize].is_captured = true;
+            match add_upvalue(compiler, local as u8, true) {
+                Ok(index) => return index,
+                Err(message) => {
+                    self.error(CString::new(message).unwrap().as_bytes_with_nul().as_ptr());
+                    return 0;
                 }
-                return i as isize;
+            }
+        }
+
+        let upvalue = self.resolve_upvalue(enclosing, name);
+        if upvalue != -1 {
+            match add_upvalue(compiler, upvalue as u8, false) {
+                Ok(index) => return index,
+                Err(message) => {
+                    self.error(CString::new(message).unwrap().as_bytes_with_nul().as_ptr());
+                    return 0;
+                }
             }
         }
 
@@ -972,6 +1004,48 @@ impl<'a> Parser<'a> {
     }
 }
 
+fn resolve_local(parser: &mut Parser, compiler: *mut Compiler, name: &Token) -> isize {
+    for i in (0..unsafe { (*compiler).local_count }).rev() {
+        let local = unsafe { &(*compiler).locals[i] };
+        if parser.identifiers_equal(&local.name, name) {
+            if local.depth == -1 {
+                parser.error(
+                    CString::new("Can't read local variable in its own initializer.")
+                        .unwrap()
+                        .as_bytes_with_nul()
+                        .as_ptr(),
+                );
+            }
+            return i as isize;
+        }
+    }
+
+    -1
+}
+
+fn add_upvalue(compiler: *mut Compiler, index: u8, is_local: bool) -> Result<isize, String> {
+    let upvalue_count = unsafe { &mut (*(*compiler).function).upvalue_count };
+
+    for i in 0..*upvalue_count {
+        let upvalue = unsafe { &(*compiler).upvalues[i] };
+        if upvalue.index == index && upvalue.is_local == is_local {
+            return Ok(i as isize);
+        }
+    }
+
+    if upvalue_count == &(u8::MAX as usize + 1) {
+        return Err("Too many closure variables in function.".to_string());
+    }
+
+    unsafe { (*compiler).upvalues[*upvalue_count].is_local = is_local };
+    unsafe { (*compiler).upvalues[*upvalue_count].index = index };
+
+    let count = unsafe { (*(*compiler).function).upvalue_count };
+    unsafe { (*(*compiler).function).upvalue_count += 1 };
+
+    Ok(count as isize)
+}
+
 #[repr(u8)]
 #[derive(Clone)]
 enum Precedence {
@@ -1009,16 +1083,25 @@ pub struct Compiler {
     local_count: usize,
     scope_depth: i8,
 
+    upvalues: [Upvalue; u8::MAX as usize + 1],
+
     function: *mut ObjFunction,
     ftype: FunctionType,
 
     enclosing: *mut Compiler,
 }
 
+#[derive(Clone, Copy)]
+struct Upvalue {
+    index: u8,
+    is_local: bool,
+}
+
 #[derive(Clone)]
 pub struct Local {
     name: Token,
     depth: i8,
+    is_captured: bool,
 }
 
 impl Compiler {
@@ -1033,6 +1116,7 @@ impl Compiler {
         let local = Local {
             name: Token::default(),
             depth: 0,
+            is_captured: false,
         };
         let mut locals = [0; u8::MAX as usize + 1].map(|_| local.clone());
         locals[0].depth = 0;
@@ -1042,6 +1126,10 @@ impl Compiler {
             locals,
             local_count: 1,
             scope_depth: 0,
+            upvalues: [Upvalue {
+                index: 0,
+                is_local: false,
+            }; u8::MAX as usize + 1],
             function: ObjFunction::new(objects),
             ftype: ftype.clone(),
             enclosing,

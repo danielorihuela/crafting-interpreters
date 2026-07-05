@@ -50,7 +50,11 @@ pub mod debug {
                 print_constant_instructions(chunk, offset, opcode);
                 offset + 2
             }
-            OpCode::GetLocal | OpCode::SetLocal | OpCode::Call => {
+            OpCode::GetLocal
+            | OpCode::SetLocal
+            | OpCode::Call
+            | OpCode::SetUpvalue
+            | OpCode::GetUpvalue => {
                 println!("{:<16} {:4}", opcode.to_string(), chunk.code[offset + 1]);
                 offset + 2
             }
@@ -63,6 +67,30 @@ pub mod debug {
                     offset + 3 + jump as usize
                 );
                 offset + 3
+            }
+            OpCode::Closure => {
+                let mut curr_offset = offset;
+
+                curr_offset += 1;
+                let constant = unsafe { *(chunk.code.data).add(curr_offset) };
+                let value = &chunk.values[constant as usize];
+                println!("{:<16} {constant:4} '{value}'", opcode.to_string());
+
+                let function = value.as_function();
+                for _ in 0..unsafe { (*function).upvalue_count } {
+                    curr_offset += 1;
+                    let is_local = chunk.code[curr_offset];
+                    curr_offset += 1;
+                    let index = chunk.code[curr_offset];
+                    println!(
+                        "{:04}      |                     {} {}",
+                        curr_offset - 2,
+                        if is_local == 1 { "local" } else { "upvalue" },
+                        index
+                    );
+                }
+
+                curr_offset
             }
             OpCode::Unknown => {
                 println!("Unknown opcode {}", instruction);

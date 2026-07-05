@@ -29,12 +29,17 @@ pub enum OpCode {
     SetGlobal,
     GetLocal,
     SetLocal,
+    GetUpvalue,
+    SetUpvalue,
 
     JumpIfFalse,
     Jump,
     Loop,
 
     Call,
+    Closure,
+
+    CloseUpvalue,
 
     Unknown,
 }

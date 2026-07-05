@@ -12,6 +12,7 @@ pub struct ObjFunction {
     pub arity: usize,
     pub chunk: Chunk,
     pub name: *mut ObjString,
+    pub upvalue_count: usize,
 }
 
 impl ObjFunction {
@@ -27,6 +28,7 @@ fn allocate_function(objects: *mut *mut Obj) -> *mut ObjFunction {
         std::ptr::addr_of_mut!((*function).arity).write(0);
         std::ptr::addr_of_mut!((*function).chunk).write(Chunk::default());
         std::ptr::addr_of_mut!((*function).name).write(std::ptr::null_mut());
+        std::ptr::addr_of_mut!((*function).upvalue_count).write(0);
     }
 
     function

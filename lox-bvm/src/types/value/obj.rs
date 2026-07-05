@@ -3,15 +3,19 @@ use std::ptr::drop_in_place;
 
 use crate::memory::alloc::reallocate;
 use crate::memory::array::free_array;
+use crate::types::value::closure::ObjClosure;
 use crate::types::value::function::ObjFunction;
 use crate::types::value::native::ObjNative;
 use crate::types::value::string::ObjString;
+use crate::types::value::upvalue::ObjUpvalue;
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone)]
 pub enum ObjType {
     String,
     Function,
+    Closure,
     Native,
+    Upvalue,
 }
 
 pub struct Obj {
@@ -47,9 +51,24 @@ pub unsafe fn free_object(object: impl Into<ObjPtr>) {
             unsafe { drop_in_place(&mut (*function).chunk) };
             reallocate(function, 1, 0);
         }
+        ObjType::Closure => {
+            let closure = object_ptr.0 as *mut ObjClosure;
+            unsafe {
+                free_array(
+                    (*closure).upvalues,
+                    (*closure).upvalue_count,
+                    (*closure).upvalue_count,
+                );
+            }
+            reallocate(closure, 1, 0);
+        }
         ObjType::Native => {
             let native = object_ptr.0 as *mut ObjNative;
             reallocate(native, 1, 0);
+        }
+        ObjType::Upvalue => {
+            let upvalue = object_ptr.0 as *mut ObjUpvalue;
+            reallocate(upvalue, 1, 0);
         }
     }
 }
