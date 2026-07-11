@@ -11,15 +11,15 @@ use crate::{
 
 const MAX_LOAD: f32 = 0.75;
 
-struct Entry {
-    key: *mut ObjString,
-    value: Value,
+pub struct Entry {
+    pub key: *mut ObjString,
+    pub value: Value,
 }
 
 pub struct HashTable {
     count: usize,
-    capacity: usize,
-    entries: *mut Entry,
+    pub capacity: usize,
+    pub entries: *mut Entry,
 }
 
 impl HashTable {

@@ -3,7 +3,10 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-use crate::memory::array::{free_array, grow_array, grow_capacity};
+use crate::memory::{
+    alloc::reallocate_no_gc,
+    array::{free_array, grow_array, grow_capacity},
+};
 
 pub struct DynArray<T> {
     pub data: *mut T,
@@ -27,6 +30,17 @@ impl<T> DynArray<T> {
             let old_capacity = self.capacity;
             self.capacity = grow_capacity(old_capacity);
             self.data = grow_array::<T>(self.data, old_capacity, self.capacity);
+        }
+
+        unsafe { self.data.add(self.count).write(data) };
+        self.count += 1;
+    }
+
+    pub fn write_no_gc(&mut self, data: T) {
+        if self.capacity == self.count {
+            let old_capacity = self.capacity;
+            self.capacity = grow_capacity(old_capacity);
+            self.data = reallocate_no_gc(self.data, old_capacity, self.capacity);
         }
 
         unsafe { self.data.add(self.count).write(data) };

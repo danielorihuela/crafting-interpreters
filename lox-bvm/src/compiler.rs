@@ -1,7 +1,7 @@
 use std::{ffi::CString, mem::transmute, slice::from_raw_parts, str::from_utf8_unchecked};
 
 use crate::{
-    AsciiChar,
+    AsciiChar, COMPILER_INSTANCE,
     collections::hashtable::HashTable,
     scanner::Scanner,
     types::{
@@ -108,6 +108,9 @@ impl<'a> Parser<'a> {
             self.previous.length,
         );
         self.compiler = Box::into_raw(Box::new(compiler));
+        unsafe {
+            COMPILER_INSTANCE = self.compiler;
+        }
         let curr_compiler = unsafe { &mut *self.compiler };
 
         self.begin_scope();
@@ -659,6 +662,9 @@ impl<'a> Parser<'a> {
         }
 
         self.compiler = unsafe { &mut *(*self.compiler).enclosing };
+        unsafe {
+            COMPILER_INSTANCE = self.compiler;
+        }
 
         function
     }
@@ -1085,10 +1091,10 @@ pub struct Compiler {
 
     upvalues: [Upvalue; u8::MAX as usize + 1],
 
-    function: *mut ObjFunction,
+    pub function: *mut ObjFunction,
     ftype: FunctionType,
 
-    enclosing: *mut Compiler,
+    pub enclosing: *mut Compiler,
 }
 
 #[derive(Clone, Copy)]

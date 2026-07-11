@@ -1,4 +1,4 @@
-use crate::{collections::dynarray::DynArray, types::value::Value};
+use crate::{VM_INSTANCE, collections::dynarray::DynArray, types::value::Value};
 
 #[derive(Default)]
 pub struct Chunk {
@@ -14,7 +14,16 @@ impl Chunk {
     }
 
     pub fn add_constant(&mut self, value: Value) -> usize {
-        self.values.write(value);
+        let vm_ready = unsafe { !VM_INSTANCE.is_null() };
+        if vm_ready {
+            unsafe {
+                (*VM_INSTANCE).stack.push(value.clone());
+                self.values.write(value.clone());
+                (*VM_INSTANCE).stack.pop();
+            }
+        } else {
+            self.values.write(value);
+        }
         self.values.count - 1
     }
 }

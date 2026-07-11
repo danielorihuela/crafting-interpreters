@@ -1,8 +1,8 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::{
-    AsciiChar,
-    collections::{hashtable::HashTable, stack::Stack},
+    AsciiChar, COMPILER_INSTANCE,
+    collections::{dynarray::DynArray, hashtable::HashTable, stack::Stack},
     compiler::{Compiler, FunctionType, Parser},
     scanner::Scanner,
     types::{
@@ -21,14 +21,19 @@ use crate::{
 pub const FRAMES_MAX: usize = 64;
 
 pub struct VM {
-    frames: [CallFrame; FRAMES_MAX],
-    frame_count: u8,
+    pub frames: [CallFrame; FRAMES_MAX],
+    pub frame_count: u8,
 
-    stack: Stack<Value>,
-    open_upvalues: *mut ObjUpvalue,
-    objects: *mut Obj,
-    strings: HashTable,
-    globals: HashTable,
+    pub stack: Stack<Value>,
+    pub open_upvalues: *mut ObjUpvalue,
+    pub objects: *mut Obj,
+    pub strings: HashTable,
+    pub globals: HashTable,
+
+    pub gray_stack: DynArray<*mut Obj>,
+
+    pub bytes_allocated: usize,
+    pub next_gc: usize,
 
     #[cfg(test)]
     output: Vec<String>,
@@ -49,6 +54,11 @@ impl VM {
             objects: std::ptr::null_mut(),
             strings: HashTable::new(),
             globals: HashTable::new(),
+
+            gray_stack: DynArray::default(),
+
+            bytes_allocated: 0,
+            next_gc: 1024 * 1024,
 
             #[cfg(test)]
             output: Vec::new(),
@@ -73,9 +83,19 @@ impl VM {
             std::ptr::null(),
             0,
         );
+
+        unsafe {
+            COMPILER_INSTANCE = compiler as *mut Compiler;
+        }
+
         let parser = &mut Parser::new(scanner, compiler, &mut self.objects, &mut self.strings);
 
         let function = parser.compile();
+
+        unsafe {
+            COMPILER_INSTANCE = compiler as *mut Compiler;
+        }
+
         if function.is_null() {
             return InterpretResult::CompileError;
         }
@@ -127,8 +147,8 @@ impl VM {
                     self.stack.push(value.clone());
                 }
                 OpCode::Add => {
-                    let b = self.stack.pop();
-                    let a = self.stack.pop();
+                    let b = self.stack.peek(0).clone();
+                    let a = self.stack.peek(1).clone();
                     let result = if a.is_string() && b.is_string() {
                         Ok(Value::from(unsafe {
                             (*a.as_string()).add(
@@ -140,6 +160,8 @@ impl VM {
                     } else {
                         a + b
                     };
+                    self.stack.pop();
+                    self.stack.pop();
                     match result {
                         Ok(v) => self.stack.push(v),
                         Err(e) => {
@@ -532,10 +554,10 @@ impl InterpretResult {
 }
 
 #[derive(Clone)]
-struct CallFrame {
-    closure: *mut ObjClosure,
-    ip: *mut u8,
-    slots: *mut Value,
+pub struct CallFrame {
+    pub closure: *mut ObjClosure,
+    pub ip: *mut u8,
+    pub slots: *mut Value,
 }
 
 impl Drop for VM {

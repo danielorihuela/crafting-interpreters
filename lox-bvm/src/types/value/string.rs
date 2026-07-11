@@ -1,5 +1,6 @@
 use std::ptr::copy_nonoverlapping;
 
+use crate::VM_INSTANCE;
 use crate::collections::hashtable::HashTable;
 use crate::memory::alloc::allocate;
 use crate::memory::array::free_array;
@@ -80,7 +81,16 @@ fn allocate_string(
         (*obj_string).length = length;
         (*obj_string).chars = chars;
         (*obj_string).hash = hash;
-        (*strings).set(obj_string, Value::from(()));
+
+        if !VM_INSTANCE.is_null() {
+            (*VM_INSTANCE).stack.push(Value::from(obj_string));
+            (*strings).set(obj_string, Value::from(()));
+            (*VM_INSTANCE).stack.pop();
+        }
+
+        if (*strings).get(obj_string).is_none() {
+            (*strings).set(obj_string, Value::from(()));
+        }
     }
 
     obj_string
