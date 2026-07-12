@@ -9,6 +9,7 @@ use crate::{
         opcode::OpCode,
         value::{
             Value,
+            class::{ObjClass, ObjInstance},
             closure::ObjClosure,
             native::{NativeFn, ObjNative},
             obj::{Obj, free_object},
@@ -373,6 +374,58 @@ impl VM {
                     close_upvalues(&mut self.open_upvalues, last);
                     self.stack.pop();
                 }
+                OpCode::Class => {
+                    let position = unsafe { *frame.ip } as usize;
+                    frame.ip = unsafe { frame.ip.add(1) };
+
+                    let name =
+                        unsafe { &(*(*frame.closure).function).chunk }.values[position].as_string();
+                    let class = ObjClass::new(&mut self.objects, name);
+                    self.stack.push(Value::from(class));
+                }
+                OpCode::GetProperty => {
+                    if !self.stack.peek(0).is_instance() {
+                        self.runtime_error("Only instances have properties.");
+                        return InterpretResult::RuntimeError;
+                    }
+
+                    let instance = self.stack.peek(0).as_instance();
+
+                    let name_position = unsafe { *frame.ip } as usize;
+                    frame.ip = unsafe { frame.ip.add(1) };
+
+                    let name = unsafe { &(*(*frame.closure).function).chunk }.values[name_position]
+                        .as_string();
+
+                    let value = unsafe { (*instance).fields.get(name) };
+                    if let Some(v) = value {
+                        self.stack.pop();
+                        self.stack.push(unsafe { (*v).clone() });
+                    } else {
+                        self.runtime_error(&format!("Undefined property '{}'.", Value::from(name)));
+                        return InterpretResult::RuntimeError;
+                    }
+                }
+                OpCode::SetProperty => {
+                    if !self.stack.peek(1).is_instance() {
+                        self.runtime_error("Only instances have fields.");
+                        return InterpretResult::RuntimeError;
+                    }
+
+                    let instance = self.stack.peek(1).as_instance();
+
+                    let name_position = unsafe { *frame.ip } as usize;
+                    frame.ip = unsafe { frame.ip.add(1) };
+
+                    let name = unsafe { &(*(*frame.closure).function).chunk }.values[name_position]
+                        .as_string();
+
+                    let value = self.stack.peek(0).clone();
+                    unsafe { (*instance).fields.set(name, value.clone()) };
+                    self.stack.pop();
+                    self.stack.pop();
+                    self.stack.push(value);
+                }
                 OpCode::Unknown => panic!("Something went wrong running the bytecode"),
             }
         }
@@ -381,6 +434,14 @@ impl VM {
     fn call_value(&mut self, callee: Value, arg_count: usize) -> bool {
         if callee.is_function() {
             unreachable!("eventhing is wrapper up in a closure")
+        } else if callee.is_class() {
+            let class = callee.as_class();
+            let instance = Value::from(ObjInstance::new(&mut self.objects, class));
+            let stack_len = self.stack.len();
+            unsafe {
+                *self.stack.as_mut_ptr().add(stack_len - arg_count - 1) = instance.clone();
+            }
+            return true;
         } else if callee.is_native() {
             let native = callee.as_native();
             let stack_base = self.stack.len() - arg_count;
@@ -637,5 +698,16 @@ mod tests {
         not_equal_strings_2: ("\"hello\" != \"world\"", "true"),
 
         equal_different_types: ("1 == \"1\"", "false"),
+    }
+
+    #[test]
+    fn print_class_name() {
+        let mut vm = VM::new();
+        let source = CString::new("class Brioche {} print Brioche;")
+            .expect("Input doesn't contain null bytes");
+        let result = vm.interpret(source.as_bytes_with_nul().as_ptr() as *const AsciiChar);
+
+        assert_eq!(result, InterpretResult::Ok);
+        assert_eq!(vm.output(), &["Brioche".to_string()]);
     }
 }

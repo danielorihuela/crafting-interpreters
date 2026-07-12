@@ -78,7 +78,9 @@ impl<'a> Parser<'a> {
     }
 
     fn declaration(&mut self) {
-        if self.match_type(TokenType::Fun) {
+        if self.match_type(TokenType::Class) {
+            self.class_declaration();
+        } else if self.match_type(TokenType::Fun) {
             self.fun_declaration();
         } else if self.match_type(TokenType::Var) {
             self.var_declaration();
@@ -89,6 +91,36 @@ impl<'a> Parser<'a> {
         if self.panic_mode {
             self.synchronize();
         }
+    }
+
+    fn class_declaration(&mut self) {
+        self.consume(
+            TokenType::Identifier,
+            CString::new("Expect class name.")
+                .unwrap()
+                .as_bytes_with_nul()
+                .as_ptr(),
+        );
+        let name_constant = self.identifier_constant();
+        self.declare_variable();
+
+        self.emit_bytes(OpCode::Class, name_constant);
+        self.define_variable(name_constant);
+
+        self.consume(
+            TokenType::LeftBrace,
+            CString::new("Expect '{' before class body.")
+                .unwrap()
+                .as_bytes_with_nul()
+                .as_ptr(),
+        );
+        self.consume(
+            TokenType::RightBrace,
+            CString::new("Expect '}' after class body.")
+                .unwrap()
+                .as_bytes_with_nul()
+                .as_ptr(),
+        );
     }
 
     fn fun_declaration(&mut self) {
@@ -729,6 +761,24 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn dot(&mut self, can_assign: bool) {
+        self.consume(
+            TokenType::Identifier,
+            CString::new("Expect property name after '.'.")
+                .unwrap()
+                .as_bytes_with_nul()
+                .as_ptr(),
+        );
+        let name = self.identifier_constant();
+
+        if can_assign && self.match_type(TokenType::Equal) {
+            self.expression();
+            self.emit_bytes(OpCode::SetProperty, name);
+        } else {
+            self.emit_bytes(OpCode::GetProperty, name);
+        }
+    }
+
     fn string(&mut self, can_assign: bool) {
         let start = unsafe { self.previous.start.add(1) };
         let end = self.previous.length - 2;
@@ -930,6 +980,11 @@ impl<'a> Parser<'a> {
                 prefix: None,
                 infix: Some(|parser, can_assign| parser.or(can_assign)),
                 precedence: Precedence::Or,
+            },
+            TokenType::Dot => ParseRule {
+                prefix: None,
+                infix: Some(|parser, can_assign| parser.dot(can_assign)),
+                precedence: Precedence::Call,
             },
             _ => ParseRule {
                 prefix: None,

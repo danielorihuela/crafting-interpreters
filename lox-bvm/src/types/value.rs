@@ -1,3 +1,4 @@
+pub mod class;
 pub mod closure;
 pub mod function;
 pub mod native;
@@ -13,6 +14,7 @@ use std::{
 use crate::types::{
     AsciiChar,
     value::{
+        class::{ObjClass, ObjInstance},
         closure::ObjClosure,
         function::ObjFunction,
         native::ObjNative,
@@ -84,6 +86,17 @@ impl Display for Value {
                     }
                     ObjType::Native => "<native fn>".to_string(),
                     ObjType::Upvalue => "upvalue".to_string(),
+                    ObjType::Class => {
+                        let class = self.as_obj() as *mut ObjClass;
+                        let value_name = Value::from(unsafe { (*class).name });
+                        format!("{}", value_name)
+                    }
+                    ObjType::Instance => {
+                        let instance = self.as_obj() as *mut ObjInstance;
+                        let class = unsafe { (*instance).class };
+                        let value_name = Value::from(unsafe { (*class).name });
+                        format!("{} instance", value_name)
+                    }
                 };
                 write!(f, "{}", data)
             }
@@ -214,6 +227,28 @@ impl From<*mut ObjClosure> for Value {
     }
 }
 
+impl From<*mut ObjClass> for Value {
+    fn from(value: *mut ObjClass) -> Self {
+        Self {
+            vtype: ValueType::Obj,
+            vunion: ValueUnion {
+                obj: value as *mut Obj,
+            },
+        }
+    }
+}
+
+impl From<*mut ObjInstance> for Value {
+    fn from(value: *mut ObjInstance) -> Self {
+        Self {
+            vtype: ValueType::Obj,
+            vunion: ValueUnion {
+                obj: value as *mut Obj,
+            },
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct OperationError(pub String);
 
@@ -332,6 +367,14 @@ impl Value {
         self.is_obj() && self.obj_type() == &ObjType::Closure
     }
 
+    pub fn is_class(&self) -> bool {
+        self.is_obj() && self.obj_type() == &ObjType::Class
+    }
+
+    pub fn is_instance(&self) -> bool {
+        self.is_obj() && self.obj_type() == &ObjType::Instance
+    }
+
     pub fn as_bool(&self) -> bool {
         unsafe { self.vunion.boolean }
     }
@@ -362,6 +405,14 @@ impl Value {
 
     pub fn as_closure(&self) -> *mut ObjClosure {
         self.as_obj() as *mut ObjClosure
+    }
+
+    pub fn as_class(&self) -> *mut ObjClass {
+        self.as_obj() as *mut ObjClass
+    }
+
+    pub fn as_instance(&self) -> *mut ObjInstance {
+        self.as_obj() as *mut ObjInstance
     }
 }
 

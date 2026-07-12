@@ -5,6 +5,7 @@ use crate::collections::hashtable::HashTable;
 use crate::memory::alloc::reallocate;
 use crate::memory::array::free_array;
 use crate::types::value::Value;
+use crate::types::value::class::{ObjClass, ObjInstance};
 use crate::types::value::closure::ObjClosure;
 use crate::types::value::function::ObjFunction;
 use crate::types::value::native::ObjNative;
@@ -21,6 +22,8 @@ pub enum ObjType {
     Closure,
     Native,
     Upvalue,
+    Class,
+    Instance,
 }
 
 pub struct Obj {
@@ -90,6 +93,15 @@ pub unsafe fn free_object(object: impl Into<ObjPtr>) {
         ObjType::Upvalue => {
             let upvalue = object_ptr.0 as *mut ObjUpvalue;
             reallocate(upvalue, 1, 0);
+        }
+        ObjType::Class => {
+            let class = object_ptr.0 as *mut ObjClass;
+            reallocate(class, 1, 0);
+        }
+        ObjType::Instance => {
+            let instance = object_ptr.0 as *mut ObjInstance;
+            unsafe { (*instance).fields.free() };
+            reallocate(instance, 1, 0);
         }
     }
 }
@@ -229,6 +241,15 @@ fn blacken_object(object: *mut Obj) {
             for i in 0..unsafe { (*closure).upvalue_count } {
                 mark_object(unsafe { (*closure).upvalues.add(i) } as *mut Obj);
             }
+        }
+        ObjType::Class => {
+            let class = object as *mut ObjClass;
+            mark_object(unsafe { (*class).name } as *mut Obj);
+        }
+        ObjType::Instance => {
+            let instance = object as *mut ObjInstance;
+            mark_object(unsafe { (*instance).class } as *mut Obj);
+            mark_table(unsafe { &mut (*instance).fields });
         }
     }
 }

@@ -55,7 +55,12 @@ pub mod debug {
                 print_constant_instructions(chunk, offset, opcode);
                 offset + 2
             }
-            OpCode::DefineGlobal | OpCode::GetGlobal | OpCode::SetGlobal => {
+            OpCode::DefineGlobal
+            | OpCode::GetGlobal
+            | OpCode::SetGlobal
+            | OpCode::Class
+            | OpCode::GetProperty
+            | OpCode::SetProperty => {
                 print_constant_instructions(chunk, offset, opcode);
                 offset + 2
             }

@@ -41,6 +41,10 @@ pub enum OpCode {
 
     CloseUpvalue,
 
+    Class,
+    SetProperty,
+    GetProperty,
+
     Unknown,
 }
 

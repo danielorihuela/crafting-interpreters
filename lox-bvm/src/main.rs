@@ -14,7 +14,7 @@ mod types;
 mod vm;
 
 pub const DEBUG_STRESS_GC: bool = false;
-pub const DEBUG_LOG_GC: bool = true;
+pub const DEBUG_LOG_GC: bool = false;
 
 pub use crate::types::value::obj::garbage_collect;
 
