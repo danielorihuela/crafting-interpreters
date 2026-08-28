@@ -25,19 +25,7 @@ impl ObjString {
         objects: *mut *mut Obj,
         strings: *mut HashTable,
     ) -> *mut ObjString {
-        let hash = hash_string(chars, length);
-        let interned = unsafe { (*strings).find_string(chars, length, hash) };
-        if let Some(interned) = interned {
-            return interned;
-        }
-
-        let heap_chars = allocate::<AsciiChar>(length + 1);
-        unsafe {
-            copy_nonoverlapping(chars, heap_chars, length);
-            heap_chars.add(length).write(0)
-        };
-
-        allocate_string(heap_chars, length, hash, objects, strings)
+        copy_string(chars, length, objects, strings)
     }
 
     pub fn add(
@@ -94,6 +82,27 @@ fn allocate_string(
     }
 
     obj_string
+}
+
+pub fn copy_string(
+    chars: *const AsciiChar,
+    length: usize,
+    objects: *mut *mut Obj,
+    strings: *mut HashTable,
+) -> *mut ObjString {
+    let hash = hash_string(chars, length);
+    let interned = unsafe { (*strings).find_string(chars, length, hash) };
+    if let Some(interned) = interned {
+        return interned;
+    }
+
+    let heap_chars = allocate::<AsciiChar>(length + 1);
+    unsafe {
+        copy_nonoverlapping(chars, heap_chars, length);
+        heap_chars.add(length).write(0)
+    };
+
+    allocate_string(heap_chars, length, hash, objects, strings)
 }
 
 fn take_string(

@@ -16,6 +16,8 @@ pub struct Parser<'a> {
     scanner: &'a mut Scanner,
     compiler: *mut Compiler,
 
+    current_class: *mut ClassCompiler,
+
     current: Token,
     previous: Token,
 
@@ -36,6 +38,7 @@ impl<'a> Parser<'a> {
         Self {
             scanner,
             compiler,
+            current_class: std::ptr::null_mut(),
             current: Token::default(),
             previous: Token::default(),
             objects,
@@ -101,12 +104,19 @@ impl<'a> Parser<'a> {
                 .as_bytes_with_nul()
                 .as_ptr(),
         );
+        let class_name = self.previous.clone();
         let name_constant = self.identifier_constant();
         self.declare_variable();
 
         self.emit_bytes(OpCode::Class, name_constant);
         self.define_variable(name_constant);
 
+        let class_compiler = Box::new(ClassCompiler {
+            enclosing: self.current_class,
+        });
+        self.current_class = Box::into_raw(class_compiler);
+
+        self.named_variable_with(&class_name, false);
         self.consume(
             TokenType::LeftBrace,
             CString::new("Expect '{' before class body.")
@@ -114,6 +124,9 @@ impl<'a> Parser<'a> {
                 .as_bytes_with_nul()
                 .as_ptr(),
         );
+        while self.current.ttype != TokenType::RightBrace && self.current.ttype != TokenType::Eof {
+            self.method();
+        }
         self.consume(
             TokenType::RightBrace,
             CString::new("Expect '}' after class body.")
@@ -121,6 +134,35 @@ impl<'a> Parser<'a> {
                 .as_bytes_with_nul()
                 .as_ptr(),
         );
+        self.emit_byte(OpCode::Pop);
+
+        if !self.current_class.is_null() {
+            let class_compiler = unsafe { Box::from_raw(self.current_class) };
+            self.current_class = class_compiler.enclosing;
+        } else {
+            self.current_class = std::ptr::null_mut();
+        }
+    }
+
+    fn method(&mut self) {
+        self.consume(
+            TokenType::Identifier,
+            CString::new("Expect method name.")
+                .unwrap()
+                .as_bytes_with_nul()
+                .as_ptr(),
+        );
+        let constant = self.identifier_constant();
+
+        if self.previous.length == 4
+            && unsafe { from_raw_parts(self.previous.start, self.previous.length) } == b"init"
+        {
+            self.function(FunctionType::Initializer);
+        } else {
+            self.function(FunctionType::Method);
+        }
+
+        self.emit_bytes(OpCode::Method, constant);
     }
 
     fn fun_declaration(&mut self) {
@@ -397,6 +439,15 @@ impl<'a> Parser<'a> {
         if self.match_type(TokenType::Semicolon) {
             self.emit_return();
         } else {
+            if unsafe { (*self.compiler).ftype.clone() } == FunctionType::Initializer {
+                self.error(
+                    CString::new("Can't return a value from an initializer.")
+                        .unwrap()
+                        .as_bytes_with_nul()
+                        .as_ptr(),
+                );
+            }
+
             self.expression();
             self.consume(
                 TokenType::Semicolon,
@@ -774,6 +825,10 @@ impl<'a> Parser<'a> {
         if can_assign && self.match_type(TokenType::Equal) {
             self.expression();
             self.emit_bytes(OpCode::SetProperty, name);
+        } else if self.match_type(TokenType::LeftParen) {
+            let arg_count = self.argument_list();
+            self.emit_bytes(OpCode::Invoke, name);
+            self.emit_byte(arg_count);
         } else {
             self.emit_bytes(OpCode::GetProperty, name);
         }
@@ -789,6 +844,46 @@ impl<'a> Parser<'a> {
 
     fn variable(&mut self, can_assign: bool) {
         self.named_variable(can_assign);
+    }
+
+    fn this(&mut self, can_assign: bool) {
+        if self.current_class.is_null() {
+            self.error(
+                CString::new("Can't use 'this' outside of a class.")
+                    .unwrap()
+                    .as_bytes_with_nul()
+                    .as_ptr(),
+            );
+            return;
+        }
+        self.variable(false);
+    }
+
+    fn named_variable_with(&mut self, name: &Token, can_assign: bool) {
+        let mut set_opcode = OpCode::SetGlobal;
+        let mut get_opcode = OpCode::GetGlobal;
+        let mut arg = resolve_local(self, self.compiler, &name);
+        if arg != -1 {
+            set_opcode = OpCode::SetLocal;
+            get_opcode = OpCode::GetLocal;
+        } else {
+            arg = self.resolve_upvalue(self.compiler, &name);
+            if arg != -1 {
+                set_opcode = OpCode::SetUpvalue;
+                get_opcode = OpCode::GetUpvalue;
+            } else {
+                arg = self.identifier_constant() as isize;
+                set_opcode = OpCode::SetGlobal;
+                get_opcode = OpCode::GetGlobal;
+            }
+        }
+
+        if can_assign && self.match_type(TokenType::Equal) {
+            self.expression();
+            self.emit_bytes(set_opcode, arg as u8);
+        } else {
+            self.emit_bytes(get_opcode, arg as u8);
+        }
     }
 
     fn named_variable(&mut self, can_assign: bool) {
@@ -986,6 +1081,11 @@ impl<'a> Parser<'a> {
                 infix: Some(|parser, can_assign| parser.dot(can_assign)),
                 precedence: Precedence::Call,
             },
+            TokenType::This => ParseRule {
+                prefix: Some(|parser, can_assign| parser.this(can_assign)),
+                infix: None,
+                precedence: Precedence::None,
+            },
             _ => ParseRule {
                 prefix: None,
                 infix: None,
@@ -1003,7 +1103,12 @@ impl<'a> Parser<'a> {
     }
 
     fn emit_return(&mut self) {
-        self.emit_byte(OpCode::Nil);
+        if unsafe { (*self.compiler).ftype.clone() } == FunctionType::Initializer {
+            self.emit_bytes(OpCode::GetLocal, 0);
+        } else {
+            self.emit_byte(OpCode::Nil);
+        }
+
         self.emit_byte(OpCode::Return);
     }
 
@@ -1152,6 +1257,10 @@ pub struct Compiler {
     pub enclosing: *mut Compiler,
 }
 
+pub struct ClassCompiler {
+    enclosing: *mut ClassCompiler,
+}
+
 #[derive(Clone, Copy)]
 struct Upvalue {
     index: u8,
@@ -1174,15 +1283,22 @@ impl Compiler {
         chars: *const AsciiChar,
         length: usize,
     ) -> Self {
-        let local = Local {
+        let mut local = Local {
             name: Token::default(),
             depth: 0,
             is_captured: false,
         };
+
+        if ftype != FunctionType::Function {
+            local.name.start = b"this" as *const AsciiChar;
+            local.name.length = 4;
+        } else {
+            local.name.start = b"" as *const AsciiChar;
+            local.name.length = 0;
+        }
+
         let mut locals = [0; u8::MAX as usize + 1].map(|_| local.clone());
         locals[0].depth = 0;
-        locals[0].name.start = b"" as *const AsciiChar;
-        locals[0].name.length = 0;
         let compiler = Self {
             locals,
             local_count: 1,
@@ -1208,6 +1324,8 @@ impl Compiler {
 pub enum FunctionType {
     Function,
     Script,
+    Method,
+    Initializer,
 }
 
 #[cfg(test)]

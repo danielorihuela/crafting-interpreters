@@ -1,6 +1,8 @@
 use crate::{
     collections::hashtable::HashTable,
     types::value::{
+        Value,
+        closure::ObjClosure,
         obj::{Obj, ObjType, allocate_object},
         string::ObjString,
     },
@@ -10,6 +12,7 @@ use crate::{
 pub struct ObjClass {
     obj: Obj,
     pub name: *mut ObjString,
+    pub methods: HashTable,
 }
 
 impl ObjClass {
@@ -23,6 +26,7 @@ fn allocate_class(objects: *mut *mut Obj, name: *mut ObjString) -> *mut ObjClass
 
     unsafe {
         (*class).name = name;
+        (*class).methods = HashTable::new();
     }
 
     class
@@ -50,4 +54,36 @@ fn allocate_instance(objects: *mut *mut Obj, class: *mut ObjClass) -> *mut ObjIn
     }
 
     instance
+}
+
+#[repr(C)]
+pub struct ObjBoundMethod {
+    obj: Obj,
+    pub receiver: Value,
+    pub method: *mut ObjClosure,
+}
+
+impl ObjBoundMethod {
+    pub fn new(
+        objects: *mut *mut Obj,
+        receiver: Value,
+        method: *mut ObjClosure,
+    ) -> *mut ObjBoundMethod {
+        allocate_bound_method(objects, receiver, method)
+    }
+}
+
+fn allocate_bound_method(
+    objects: *mut *mut Obj,
+    receiver: Value,
+    method: *mut ObjClosure,
+) -> *mut ObjBoundMethod {
+    let bound_method = allocate_object::<ObjBoundMethod>(ObjType::BoundMethod, objects);
+
+    unsafe {
+        (*bound_method).receiver = receiver;
+        (*bound_method).method = method;
+    }
+
+    bound_method
 }

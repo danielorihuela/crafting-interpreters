@@ -60,7 +60,8 @@ pub mod debug {
             | OpCode::SetGlobal
             | OpCode::Class
             | OpCode::GetProperty
-            | OpCode::SetProperty => {
+            | OpCode::SetProperty
+            | OpCode::Method => {
                 print_constant_instructions(chunk, offset, opcode);
                 offset + 2
             }
@@ -105,6 +106,16 @@ pub mod debug {
                 }
 
                 curr_offset
+            }
+            OpCode::Invoke => {
+                let constant = unsafe { *(chunk.code.data).add(offset + 1) };
+                let value = &chunk.values[constant as usize];
+                let arg_count = chunk.code[offset + 2];
+                println!(
+                    "{:<16} ({arg_count:4}) {constant:4} '{value}'",
+                    opcode.to_string()
+                );
+                offset + 3
             }
             OpCode::Unknown => {
                 println!("Unknown opcode {}", instruction);

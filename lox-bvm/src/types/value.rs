@@ -14,7 +14,7 @@ use std::{
 use crate::types::{
     AsciiChar,
     value::{
-        class::{ObjClass, ObjInstance},
+        class::{ObjBoundMethod, ObjClass, ObjInstance},
         closure::ObjClosure,
         function::ObjFunction,
         native::ObjNative,
@@ -96,6 +96,16 @@ impl Display for Value {
                         let class = unsafe { (*instance).class };
                         let value_name = Value::from(unsafe { (*class).name });
                         format!("{} instance", value_name)
+                    }
+                    ObjType::BoundMethod => {
+                        let bound_method = self.as_obj() as *mut ObjBoundMethod;
+                        let method = unsafe { (*(*bound_method).method).function };
+                        if unsafe { (*method).name.is_null() } {
+                            "<script>".to_string()
+                        } else {
+                            let value_name = Value::from(unsafe { (*method).name });
+                            format!("<fn {}>", value_name)
+                        }
                     }
                 };
                 write!(f, "{}", data)
@@ -249,6 +259,17 @@ impl From<*mut ObjInstance> for Value {
     }
 }
 
+impl From<*mut ObjBoundMethod> for Value {
+    fn from(value: *mut ObjBoundMethod) -> Self {
+        Self {
+            vtype: ValueType::Obj,
+            vunion: ValueUnion {
+                obj: value as *mut Obj,
+            },
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct OperationError(pub String);
 
@@ -375,6 +396,10 @@ impl Value {
         self.is_obj() && self.obj_type() == &ObjType::Instance
     }
 
+    pub fn is_bound_method(&self) -> bool {
+        self.is_obj() && self.obj_type() == &ObjType::BoundMethod
+    }
+
     pub fn as_bool(&self) -> bool {
         unsafe { self.vunion.boolean }
     }
@@ -413,6 +438,10 @@ impl Value {
 
     pub fn as_instance(&self) -> *mut ObjInstance {
         self.as_obj() as *mut ObjInstance
+    }
+
+    pub fn as_bound_method(&self) -> *mut ObjBoundMethod {
+        self.as_obj() as *mut ObjBoundMethod
     }
 }
 

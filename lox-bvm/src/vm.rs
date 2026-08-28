@@ -5,11 +5,12 @@ use crate::{
     collections::{dynarray::DynArray, hashtable::HashTable, stack::Stack},
     compiler::{Compiler, FunctionType, Parser},
     scanner::Scanner,
+    types::value::string::copy_string,
     types::{
         opcode::OpCode,
         value::{
             Value,
-            class::{ObjClass, ObjInstance},
+            class::{ObjBoundMethod, ObjClass, ObjInstance},
             closure::ObjClosure,
             native::{NativeFn, ObjNative},
             obj::{Obj, free_object},
@@ -36,6 +37,8 @@ pub struct VM {
     pub bytes_allocated: usize,
     pub next_gc: usize,
 
+    pub init_string: *mut ObjString,
+
     #[cfg(test)]
     output: Vec<String>,
 }
@@ -47,6 +50,7 @@ impl VM {
             ip: std::ptr::null_mut(),
             slots: std::ptr::null_mut(),
         };
+
         let mut vm = VM {
             frames: [(); FRAMES_MAX].map(|_| call_frame.clone()),
             frame_count: 0,
@@ -61,9 +65,18 @@ impl VM {
             bytes_allocated: 0,
             next_gc: 1024 * 1024,
 
+            init_string: std::ptr::null_mut(),
+
             #[cfg(test)]
             output: Vec::new(),
         };
+
+        vm.init_string = copy_string(
+            "init".as_ptr() as *const AsciiChar,
+            4,
+            &mut vm.objects,
+            &mut vm.strings,
+        );
 
         vm.define_native(
             "clock".as_ptr() as *mut AsciiChar,
@@ -402,8 +415,15 @@ impl VM {
                         self.stack.pop();
                         self.stack.push(unsafe { (*v).clone() });
                     } else {
-                        self.runtime_error(&format!("Undefined property '{}'.", Value::from(name)));
-                        return InterpretResult::RuntimeError;
+                        if let Err(message) = bind_method(
+                            &mut self.objects,
+                            &mut self.stack,
+                            unsafe { (*instance).class },
+                            name,
+                        ) {
+                            self.runtime_error(&message);
+                            return InterpretResult::RuntimeError;
+                        }
                     }
                 }
                 OpCode::SetProperty => {
@@ -426,9 +446,69 @@ impl VM {
                     self.stack.pop();
                     self.stack.push(value);
                 }
+                OpCode::Method => {
+                    let name_position = unsafe { *frame.ip } as usize;
+                    frame.ip = unsafe { frame.ip.add(1) };
+
+                    let name = unsafe { &(*(*frame.closure).function).chunk }.values[name_position]
+                        .as_string();
+
+                    let class = self.stack.peek(1).as_class();
+                    let method = self.stack.peek(0).clone();
+                    unsafe { (*class).methods.set(name, method) };
+                    self.stack.pop();
+                }
+                OpCode::Invoke => {
+                    let method_position = unsafe { *frame.ip } as usize;
+                    frame.ip = unsafe { frame.ip.add(1) };
+                    let method = unsafe { &(*(*frame.closure).function).chunk }.values
+                        [method_position]
+                        .as_string();
+
+                    let arg_count = unsafe { *frame.ip } as usize;
+                    frame.ip = unsafe { frame.ip.add(1) };
+
+                    if !self.invoke(method, arg_count) {
+                        return InterpretResult::RuntimeError;
+                    }
+
+                    frame = &mut self.frames[self.frame_count as usize - 1];
+                }
                 OpCode::Unknown => panic!("Something went wrong running the bytecode"),
             }
         }
+    }
+
+    fn invoke(&mut self, name: *mut ObjString, arg_count: usize) -> bool {
+        let receiver = self.stack.peek(arg_count).clone();
+        if !receiver.is_instance() {
+            self.runtime_error("Only instances have methods.");
+            return false;
+        }
+
+        let instance = receiver.as_instance();
+        if let Some(value) = unsafe { (*instance).fields.get(name) } {
+            let stack_len = self.stack.len();
+            self.stack[stack_len - arg_count - 1] = unsafe { (*value).clone() };
+            return self.call_value(unsafe { (*value).clone() }, arg_count);
+        }
+
+        self.invoke_from_class(unsafe { (*instance).class }, name, arg_count)
+    }
+
+    fn invoke_from_class(
+        &mut self,
+        class: *mut ObjClass,
+        name: *mut ObjString,
+        arg_count: usize,
+    ) -> bool {
+        let method = unsafe { (*class).methods.get(name) };
+        if let Some(m) = method {
+            return self.call(unsafe { (*m).as_closure() }, arg_count);
+        }
+
+        self.runtime_error(&format!("Undefined property '{}'.", Value::from(name)));
+        false
     }
 
     fn call_value(&mut self, callee: Value, arg_count: usize) -> bool {
@@ -441,6 +521,14 @@ impl VM {
             unsafe {
                 *self.stack.as_mut_ptr().add(stack_len - arg_count - 1) = instance.clone();
             }
+
+            if let Some(initializer) = unsafe { (*class).methods.get(self.init_string) } {
+                return self.call(unsafe { (*initializer).as_closure() }, arg_count);
+            } else if arg_count != 0 {
+                self.runtime_error(&format!("Expected 0 arguments but got {}.", arg_count));
+                return false;
+            }
+
             return true;
         } else if callee.is_native() {
             let native = callee.as_native();
@@ -453,6 +541,12 @@ impl VM {
         } else if callee.is_closure() {
             let closure = callee.as_closure();
             return self.call(closure, arg_count);
+        } else if callee.is_bound_method() {
+            let bound_method = callee.as_bound_method();
+            let method = unsafe { (*bound_method).method };
+            let stack_len = self.stack.len();
+            self.stack[stack_len - arg_count - 1] = unsafe { (*bound_method).receiver.clone() };
+            return self.call(method, arg_count);
         }
 
         self.runtime_error("Can only call functions and classes.");
@@ -491,6 +585,8 @@ impl VM {
     }
 
     pub fn free(&mut self) {
+        self.init_string = std::ptr::null_mut();
+
         let mut object = self.objects;
         while !object.is_null() {
             let next = unsafe { (*object).next.0 };
@@ -549,6 +645,24 @@ impl VM {
 
         self.stack.pop();
         self.stack.pop();
+    }
+}
+
+fn bind_method(
+    objects: &mut *mut Obj,
+    stack: &mut Stack<Value>,
+    class: *mut ObjClass,
+    name: *mut ObjString,
+) -> Result<(), String> {
+    let method = unsafe { (*class).methods.get(name) };
+    if let Some(m) = method {
+        let bound_method =
+            ObjBoundMethod::new(objects, stack.peek(0).clone(), unsafe { (*m).as_closure() });
+        stack.pop();
+        stack.push(Value::from(bound_method));
+        Ok(())
+    } else {
+        Err(format!("Undefined property '{}'.", Value::from(name)))
     }
 }
 

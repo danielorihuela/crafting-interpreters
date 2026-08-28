@@ -5,7 +5,7 @@ use crate::collections::hashtable::HashTable;
 use crate::memory::alloc::reallocate;
 use crate::memory::array::free_array;
 use crate::types::value::Value;
-use crate::types::value::class::{ObjClass, ObjInstance};
+use crate::types::value::class::{ObjBoundMethod, ObjClass, ObjInstance};
 use crate::types::value::closure::ObjClosure;
 use crate::types::value::function::ObjFunction;
 use crate::types::value::native::ObjNative;
@@ -24,6 +24,7 @@ pub enum ObjType {
     Upvalue,
     Class,
     Instance,
+    BoundMethod,
 }
 
 pub struct Obj {
@@ -96,12 +97,17 @@ pub unsafe fn free_object(object: impl Into<ObjPtr>) {
         }
         ObjType::Class => {
             let class = object_ptr.0 as *mut ObjClass;
+            unsafe { (*class).methods.free() };
             reallocate(class, 1, 0);
         }
         ObjType::Instance => {
             let instance = object_ptr.0 as *mut ObjInstance;
             unsafe { (*instance).fields.free() };
             reallocate(instance, 1, 0);
+        }
+        ObjType::BoundMethod => {
+            let bound_method = object_ptr.0 as *mut ObjBoundMethod;
+            reallocate(bound_method, 1, 0);
         }
     }
 }
@@ -154,6 +160,7 @@ fn mark_roots() {
 
         mark_table(&mut vm.globals);
         mark_compiler_roots();
+        mark_object(vm.init_string as *mut Obj);
     }
 }
 
@@ -245,11 +252,17 @@ fn blacken_object(object: *mut Obj) {
         ObjType::Class => {
             let class = object as *mut ObjClass;
             mark_object(unsafe { (*class).name } as *mut Obj);
+            mark_table(unsafe { &mut (*class).methods });
         }
         ObjType::Instance => {
             let instance = object as *mut ObjInstance;
             mark_object(unsafe { (*instance).class } as *mut Obj);
             mark_table(unsafe { &mut (*instance).fields });
+        }
+        ObjType::BoundMethod => {
+            let bound_method = object as *mut ObjBoundMethod;
+            mark_value(unsafe { &mut (*bound_method).receiver });
+            mark_object(unsafe { (*bound_method).method } as *mut Obj);
         }
     }
 }
