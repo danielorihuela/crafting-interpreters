@@ -145,15 +145,13 @@ impl HashTable {
         true
     }
 
-    fn add_all(&mut self, from: &HashTable) {
+    pub fn add_all(&mut self, from: &HashTable) {
         for i in 0..from.capacity {
             let entry = unsafe { from.entries.add(i) };
             if unsafe { (*entry).key.is_null() } {
                 continue;
             }
-            self.set(unsafe { (*entry).key }, unsafe {
-                std::mem::take(&mut (*entry).value)
-            });
+            self.set(unsafe { (*entry).key }, unsafe { (*entry).value.clone() });
         }
     }
 

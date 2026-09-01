@@ -48,6 +48,10 @@ pub enum OpCode {
     Method,
     Invoke,
 
+    Inherit,
+    GetSuper,
+    SuperInvoke,
+
     Unknown,
 }
 

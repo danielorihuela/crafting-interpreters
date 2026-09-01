@@ -107,6 +107,7 @@
           $dart tool/bin/test.dart chap26_garbage --interpreter ../lox-bvm/target/release/lox-bvm
           $dart tool/bin/test.dart chap27_classes --interpreter ../lox-bvm/target/release/lox-bvm
           $dart tool/bin/test.dart chap28_methods --interpreter ../lox-bvm/target/release/lox-bvm
+          $dart tool/bin/test.dart chap29_superclasses --interpreter ../lox-bvm/target/release/lox-bvm
           cd ..
 
           (cd craftinginterpreters/tool; $dart pub cache clean -f)

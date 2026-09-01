@@ -474,6 +474,52 @@ impl VM {
 
                     frame = &mut self.frames[self.frame_count as usize - 1];
                 }
+                OpCode::Inherit => {
+                    let superclass = self.stack.peek(1).clone();
+                    if !superclass.is_class() {
+                        self.runtime_error("Superclass must be a class.");
+                        return InterpretResult::RuntimeError;
+                    }
+
+                    let subclass = self.stack.peek(0).as_class();
+                    unsafe {
+                        (*subclass)
+                            .methods
+                            .add_all(&(*superclass.as_class()).methods);
+                    };
+                    self.stack.pop();
+                }
+                OpCode::GetSuper => {
+                    let name_position = unsafe { *frame.ip } as usize;
+                    frame.ip = unsafe { frame.ip.add(1) };
+
+                    let name = unsafe { &(*(*frame.closure).function).chunk }.values[name_position]
+                        .as_string();
+
+                    let superclass = self.stack.pop().as_class();
+
+                    if bind_method(&mut self.objects, &mut self.stack, superclass, name).is_err() {
+                        return InterpretResult::RuntimeError;
+                    }
+                }
+                OpCode::SuperInvoke => {
+                    let method_position = unsafe { *frame.ip } as usize;
+                    frame.ip = unsafe { frame.ip.add(1) };
+                    let method = unsafe { &(*(*frame.closure).function).chunk }.values
+                        [method_position]
+                        .as_string();
+
+                    let arg_count = unsafe { *frame.ip } as usize;
+                    frame.ip = unsafe { frame.ip.add(1) };
+
+                    let superclass = self.stack.pop().as_class();
+
+                    if !self.invoke_from_class(superclass, method, arg_count) {
+                        return InterpretResult::RuntimeError;
+                    }
+
+                    frame = &mut self.frames[self.frame_count as usize - 1];
+                }
                 OpCode::Unknown => panic!("Something went wrong running the bytecode"),
             }
         }

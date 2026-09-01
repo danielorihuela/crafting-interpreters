@@ -61,6 +61,7 @@ pub mod debug {
             | OpCode::Class
             | OpCode::GetProperty
             | OpCode::SetProperty
+            | OpCode::GetSuper
             | OpCode::Method => {
                 print_constant_instructions(chunk, offset, opcode);
                 offset + 2
@@ -107,7 +108,7 @@ pub mod debug {
 
                 curr_offset
             }
-            OpCode::Invoke => {
+            OpCode::Invoke | OpCode::SuperInvoke => {
                 let constant = unsafe { *(chunk.code.data).add(offset + 1) };
                 let value = &chunk.values[constant as usize];
                 let arg_count = chunk.code[offset + 2];

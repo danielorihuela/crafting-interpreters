@@ -113,8 +113,37 @@ impl<'a> Parser<'a> {
 
         let class_compiler = Box::new(ClassCompiler {
             enclosing: self.current_class,
+            has_superclass: false,
         });
         self.current_class = Box::into_raw(class_compiler);
+
+        if self.match_type(TokenType::Less) {
+            self.consume(
+                TokenType::Identifier,
+                CString::new("Expect superclass name.")
+                    .unwrap()
+                    .as_bytes_with_nul()
+                    .as_ptr(),
+            );
+            self.variable(false);
+
+            if self.identifiers_equal(&class_name, &self.previous) {
+                self.error(
+                    CString::new("A class can't inherit from itself.")
+                        .unwrap()
+                        .as_bytes_with_nul()
+                        .as_ptr(),
+                );
+            }
+
+            self.begin_scope();
+            self.add_local_for(self.synthetic_token("super"));
+            self.define_variable(0);
+
+            self.named_variable_with(&class_name, false);
+            self.emit_byte(OpCode::Inherit);
+            unsafe { (*self.current_class).has_superclass = true };
+        }
 
         self.named_variable_with(&class_name, false);
         self.consume(
@@ -138,9 +167,24 @@ impl<'a> Parser<'a> {
 
         if !self.current_class.is_null() {
             let class_compiler = unsafe { Box::from_raw(self.current_class) };
+
+            if class_compiler.has_superclass {
+                self.end_scope();
+            }
+
             self.current_class = class_compiler.enclosing;
         } else {
             self.current_class = std::ptr::null_mut();
+        }
+    }
+
+    fn synthetic_token(&self, text: &str) -> Token {
+        let bytes = text.as_bytes();
+        Token {
+            ttype: TokenType::Identifier,
+            start: bytes.as_ptr(),
+            length: bytes.len(),
+            line: self.previous.line,
         }
     }
 
@@ -311,6 +355,24 @@ impl<'a> Parser<'a> {
 
         let local = &mut unsafe { &mut (*self.compiler).locals[(*self.compiler).local_count] };
         local.name = self.previous.clone();
+        local.depth = -1;
+        local.is_captured = false;
+        unsafe { (*self.compiler).local_count += 1 };
+    }
+
+    fn add_local_for(&mut self, name: Token) {
+        if unsafe { (*self.compiler).local_count } == (u8::MAX as usize + 1) {
+            self.error(
+                CString::new("Too many local variables in function.")
+                    .unwrap()
+                    .as_bytes_with_nul()
+                    .as_ptr(),
+            );
+            return;
+        }
+
+        let local = &mut unsafe { &mut (*self.compiler).locals[(*self.compiler).local_count] };
+        local.name = name;
         local.depth = -1;
         local.is_captured = false;
         unsafe { (*self.compiler).local_count += 1 };
@@ -859,6 +921,51 @@ impl<'a> Parser<'a> {
         self.variable(false);
     }
 
+    fn super_(&mut self, can_assign: bool) {
+        if self.current_class.is_null() {
+            self.error(
+                CString::new("Can't use 'super' outside of a class.")
+                    .unwrap()
+                    .as_bytes_with_nul()
+                    .as_ptr(),
+            );
+        } else if unsafe { !(*self.current_class).has_superclass } {
+            self.error(
+                CString::new("Can't use 'super' in a class with no superclass.")
+                    .unwrap()
+                    .as_bytes_with_nul()
+                    .as_ptr(),
+            );
+        }
+
+        self.consume(
+            TokenType::Dot,
+            CString::new("Expect '.' after 'super'.")
+                .unwrap()
+                .as_bytes_with_nul()
+                .as_ptr(),
+        );
+        self.consume(
+            TokenType::Identifier,
+            CString::new("Expect superclass method name.")
+                .unwrap()
+                .as_bytes_with_nul()
+                .as_ptr(),
+        );
+        let name = self.identifier_constant();
+
+        self.named_variable_with(&self.synthetic_token("this"), false);
+        if self.match_type(TokenType::LeftParen) {
+            let arg_count = self.argument_list();
+            self.named_variable_with(&self.synthetic_token("super"), false);
+            self.emit_bytes(OpCode::SuperInvoke, name);
+            self.emit_byte(arg_count);
+        } else {
+            self.named_variable_with(&self.synthetic_token("super"), false);
+            self.emit_bytes(OpCode::GetSuper, name);
+        }
+    }
+
     fn named_variable_with(&mut self, name: &Token, can_assign: bool) {
         let mut set_opcode = OpCode::SetGlobal;
         let mut get_opcode = OpCode::GetGlobal;
@@ -872,7 +979,9 @@ impl<'a> Parser<'a> {
                 set_opcode = OpCode::SetUpvalue;
                 get_opcode = OpCode::GetUpvalue;
             } else {
-                arg = self.identifier_constant() as isize;
+                let obj_string =
+                    ObjString::new(name.start, name.length, self.objects, self.strings);
+                arg = self.make_constant(Value::from(obj_string)) as isize;
                 set_opcode = OpCode::SetGlobal;
                 get_opcode = OpCode::GetGlobal;
             }
@@ -1086,6 +1195,11 @@ impl<'a> Parser<'a> {
                 infix: None,
                 precedence: Precedence::None,
             },
+            TokenType::Super => ParseRule {
+                prefix: Some(|parser, can_assign| parser.super_(can_assign)),
+                infix: None,
+                precedence: Precedence::None,
+            },
             _ => ParseRule {
                 prefix: None,
                 infix: None,
@@ -1259,6 +1373,7 @@ pub struct Compiler {
 
 pub struct ClassCompiler {
     enclosing: *mut ClassCompiler,
+    has_superclass: bool,
 }
 
 #[derive(Clone, Copy)]
