@@ -106,7 +106,7 @@ impl HashTable {
             return None;
         }
 
-        let mut index = hash % self.capacity as u32;
+        let mut index = hash & (self.capacity as u32 - 1);
         loop {
             let entry = unsafe { self.entries.add(index as usize) };
             if unsafe { (*entry).key.is_null() } {
@@ -123,7 +123,7 @@ impl HashTable {
                 return Some(unsafe { (*entry).key });
             }
 
-            index = (index + 1) % self.capacity as u32;
+            index = (index + 1) & (self.capacity as u32 - 1);
         }
     }
 
@@ -166,7 +166,7 @@ impl HashTable {
 }
 
 fn find_entry(entries: *mut Entry, capacity: usize, key: *mut ObjString) -> *mut Entry {
-    let mut index = unsafe { (*key).hash } as usize % capacity;
+    let mut index = unsafe { (*key).hash } as usize & (capacity - 1);
     let mut tombstone = std::ptr::null_mut::<Entry>();
 
     loop {
@@ -185,6 +185,6 @@ fn find_entry(entries: *mut Entry, capacity: usize, key: *mut ObjString) -> *mut
             return entry;
         }
 
-        index = (index + 1) % capacity;
+        index = (index + 1) & (capacity - 1);
     }
 }
