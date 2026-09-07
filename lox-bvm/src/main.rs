@@ -4,6 +4,7 @@ use std::{
     io::Write,
 };
 
+use crate::memory::alloc::take_bootstrap_bytes_allocated;
 use crate::{types::AsciiChar, vm::VM};
 
 mod collections;
@@ -24,6 +25,7 @@ pub static mut COMPILER_INSTANCE: *mut compiler::Compiler = std::ptr::null_mut()
 fn initialize_vm() {
     unsafe {
         VM_INSTANCE = Box::into_raw(Box::new(VM::new()));
+        (*VM_INSTANCE).bytes_allocated = take_bootstrap_bytes_allocated();
     }
 }
 
