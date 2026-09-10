@@ -1,6 +1,7 @@
 use crate::{
     memory::array::grow_array,
     types::value::{
+        ObjPtrTarget,
         function::ObjFunction,
         obj::{Obj, ObjType, allocate_object},
         upvalue::ObjUpvalue,
@@ -14,6 +15,8 @@ pub struct ObjClosure {
     pub upvalues: *mut *mut ObjUpvalue,
     pub upvalue_count: usize,
 }
+
+impl ObjPtrTarget for ObjClosure {}
 
 impl ObjClosure {
     pub fn new(objects: *mut *mut Obj, function: *mut ObjFunction) -> *mut ObjClosure {

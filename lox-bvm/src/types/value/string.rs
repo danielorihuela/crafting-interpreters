@@ -4,7 +4,7 @@ use crate::VM_INSTANCE;
 use crate::collections::hashtable::HashTable;
 use crate::memory::alloc::allocate;
 use crate::memory::array::free_array;
-use crate::types::value::Value;
+use crate::types::value::{ObjPtrTarget, Value};
 use crate::types::{
     AsciiChar,
     value::obj::{Obj, ObjType, allocate_object},
@@ -17,6 +17,8 @@ pub struct ObjString {
     pub chars: *mut AsciiChar,
     pub hash: u32,
 }
+
+impl ObjPtrTarget for ObjString {}
 
 impl ObjString {
     pub fn new(

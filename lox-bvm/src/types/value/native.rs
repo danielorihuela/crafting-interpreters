@@ -1,5 +1,5 @@
 use crate::types::value::{
-    Value,
+    ObjPtrTarget, Value,
     obj::{Obj, ObjType, allocate_object},
 };
 
@@ -10,6 +10,8 @@ pub struct ObjNative {
     obj: Obj,
     pub function: NativeFn,
 }
+
+impl ObjPtrTarget for ObjNative {}
 
 impl ObjNative {
     pub fn new(function: NativeFn, objects: *mut *mut Obj) -> *mut ObjNative {

@@ -8,8 +8,7 @@ pub mod upvalue;
 
 use std::{
     error::Error,
-    fmt::{Debug, Display},
-    ops::{Add, Deref, Div, Mul, Sub},
+    ops::{Add, Div, Mul, Sub},
 };
 
 use crate::types::{
@@ -19,30 +18,26 @@ use crate::types::{
         closure::ObjClosure,
         function::ObjFunction,
         native::ObjNative,
-        obj::{Obj, ObjType},
+        obj::ObjType,
         string::ObjString,
     },
 };
 
+trait ObjPtrTarget {}
+
 #[cfg(value_repr = "union")]
 mod value_union {
 
-    use std::{
-        error::Error,
-        fmt::{Debug, Display},
-        ops::{Add, Deref, Div, Mul, Sub},
-    };
+    use std::fmt::{Debug, Display};
 
-    use crate::types::{
-        AsciiChar,
-        value::{
-            class::{ObjBoundMethod, ObjClass, ObjInstance},
-            closure::ObjClosure,
-            function::ObjFunction,
-            native::ObjNative,
-            obj::{Obj, ObjType},
-            string::ObjString,
-        },
+    use super::ObjPtrTarget;
+
+    use crate::types::value::{
+        class::{ObjBoundMethod, ObjClass, ObjInstance},
+        closure::ObjClosure,
+        function::ObjFunction,
+        obj::{Obj, ObjType},
+        string::ObjString,
     };
 
     #[repr(u8)]
@@ -217,74 +212,11 @@ mod value_union {
         }
     }
 
-    impl From<*mut ObjString> for Value {
-        fn from(value: *mut ObjString) -> Self {
-            Self {
-                vtype: ValueType::Obj,
-                vunion: ValueUnion {
-                    obj: value as *mut Obj,
-                },
-            }
-        }
-    }
-
-    impl From<*mut ObjFunction> for Value {
-        fn from(value: *mut ObjFunction) -> Self {
-            Self {
-                vtype: ValueType::Obj,
-                vunion: ValueUnion {
-                    obj: value as *mut Obj,
-                },
-            }
-        }
-    }
-
-    impl From<*mut ObjNative> for Value {
-        fn from(value: *mut ObjNative) -> Self {
-            Self {
-                vtype: ValueType::Obj,
-                vunion: ValueUnion {
-                    obj: value as *mut Obj,
-                },
-            }
-        }
-    }
-
-    impl From<*mut ObjClosure> for Value {
-        fn from(value: *mut ObjClosure) -> Self {
-            Self {
-                vtype: ValueType::Obj,
-                vunion: ValueUnion {
-                    obj: value as *mut Obj,
-                },
-            }
-        }
-    }
-
-    impl From<*mut ObjClass> for Value {
-        fn from(value: *mut ObjClass) -> Self {
-            Self {
-                vtype: ValueType::Obj,
-                vunion: ValueUnion {
-                    obj: value as *mut Obj,
-                },
-            }
-        }
-    }
-
-    impl From<*mut ObjInstance> for Value {
-        fn from(value: *mut ObjInstance) -> Self {
-            Self {
-                vtype: ValueType::Obj,
-                vunion: ValueUnion {
-                    obj: value as *mut Obj,
-                },
-            }
-        }
-    }
-
-    impl From<*mut ObjBoundMethod> for Value {
-        fn from(value: *mut ObjBoundMethod) -> Self {
+    impl<T> From<*mut T> for Value
+    where
+        T: ObjPtrTarget,
+    {
+        fn from(value: *mut T) -> Self {
             Self {
                 vtype: ValueType::Obj,
                 vunion: ValueUnion {
@@ -295,28 +227,28 @@ mod value_union {
     }
 
     impl Value {
-        pub fn is_bool(&self) -> bool {
-            matches!(self.vtype, ValueType::Bool)
-        }
-
         pub fn is_number(&self) -> bool {
             matches!(self.vtype, ValueType::Number)
+        }
+
+        pub fn as_number(&self) -> f64 {
+            unsafe { self.vunion.number }
         }
 
         pub fn is_nil(&self) -> bool {
             matches!(self.vtype, ValueType::Nil)
         }
 
-        pub fn is_obj(&self) -> bool {
-            matches!(self.vtype, ValueType::Obj)
+        pub fn is_bool(&self) -> bool {
+            matches!(self.vtype, ValueType::Bool)
         }
 
         pub fn as_bool(&self) -> bool {
             unsafe { self.vunion.boolean }
         }
 
-        pub fn as_number(&self) -> f64 {
-            unsafe { self.vunion.number }
+        pub fn is_obj(&self) -> bool {
+            matches!(self.vtype, ValueType::Obj)
         }
 
         pub fn as_obj(&self) -> *mut Obj {
@@ -327,85 +259,62 @@ mod value_union {
 
 #[cfg(value_repr = "nan")]
 mod value_nan {
-    use std::{
-        error::Error,
-        fmt::{Debug, Display},
-        ops::{Add, Deref, Div, Mul, Sub},
+    use super::ObjPtrTarget;
+
+    use std::fmt::{Debug, Display};
+
+    use crate::types::value::{
+        class::{ObjBoundMethod, ObjClass, ObjInstance},
+        closure::ObjClosure,
+        function::ObjFunction,
+        obj::{Obj, ObjType},
+        string::ObjString,
     };
 
-    use crate::types::{
-        AsciiChar,
-        value::{
-            class::{ObjBoundMethod, ObjClass, ObjInstance},
-            closure::ObjClosure,
-            function::ObjFunction,
-            native::ObjNative,
-            obj::{Obj, ObjType},
-            string::ObjString,
-        },
-    };
+    const SIGN_BIT: u64 = 0x8000000000000000;
 
+    const QNAN: u64 = 0x7ffc000000000000;
+
+    const NIL_MASK: u64 = QNAN | 1;
+    const FALSE_MASK: u64 = QNAN | 2;
+    const TRUE_MASK: u64 = QNAN | 3;
+
+    #[derive(Debug, Clone)]
     pub struct Value(u64);
 
+    impl Default for Value {
+        fn default() -> Self {
+            Self(NIL_MASK)
+        }
+    }
+
     impl Value {
-        pub fn num_to_value(num: f64) -> Value {
-            Value(f64::to_bits(num))
-        }
-
-        pub fn value_to_num(&self) -> f64 {
-            f64::from_bits(self.0)
-        }
-
         pub fn is_number(&self) -> bool {
-            (self.0 & QNAN.0) != QNAN.0
+            (self.0 & QNAN) != QNAN
         }
 
         pub fn as_number(&self) -> f64 {
-            self.value_to_num()
-        }
-
-        pub fn nil_val() -> Value {
-            Value(QNAN.0 | TAG_NIL.0)
+            f64::from_bits(self.0)
         }
 
         pub fn is_nil(&self) -> bool {
-            self.0 == Self::nil_val().0
-        }
-
-        pub fn false_val() -> Value {
-            Value(QNAN.0 | TAG_FALSE.0)
-        }
-
-        pub fn true_val() -> Value {
-            Value(QNAN.0 | TAG_TRUE.0)
-        }
-
-        pub fn bool_val(b: bool) -> Value {
-            if b {
-                Self::true_val()
-            } else {
-                Self::false_val()
-            }
+            self.0 == NIL_MASK
         }
 
         pub fn is_bool(&self) -> bool {
-            self.0 == Self::true_val().0 || self.0 == Self::false_val().0
+            self.0 == TRUE_MASK || self.0 == FALSE_MASK
         }
 
         pub fn as_bool(&self) -> bool {
-            self.0 == Self::true_val().0
-        }
-
-        pub fn obj_val(obj: *mut Obj) -> Value {
-            Value(SIGN_BIT.0 | QNAN.0 | (obj as u64))
-        }
-
-        pub fn as_obj(&self) -> *mut Obj {
-            (self.0 & !(SIGN_BIT.0 | QNAN.0)) as *mut Obj
+            self.0 == TRUE_MASK
         }
 
         pub fn is_obj(&self) -> bool {
-            (self.0 & (QNAN.0 | SIGN_BIT.0)) == (QNAN.0 | SIGN_BIT.0)
+            (self.0 & (QNAN | SIGN_BIT)) == (QNAN | SIGN_BIT)
+        }
+
+        pub fn as_obj(&self) -> *mut Obj {
+            (self.0 & !(SIGN_BIT | QNAN)) as *mut Obj
         }
     }
 
@@ -416,7 +325,7 @@ mod value_nan {
             } else if self.is_nil() {
                 return write!(f, "nil");
             } else if self.is_number() {
-                return write!(f, "{}", self.value_to_num());
+                return write!(f, "{}", self.as_number());
             } else if self.is_obj() {
                 let data = match self.obj_type() {
                     ObjType::String => {
@@ -481,24 +390,6 @@ mod value_nan {
         }
     }
 
-    impl Debug for Value {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(f, "{}", self)
-        }
-    }
-
-    impl Default for Value {
-        fn default() -> Self {
-            Value::from(())
-        }
-    }
-
-    impl Clone for Value {
-        fn clone(&self) -> Self {
-            Value(self.0.clone())
-        }
-    }
-
     impl PartialEq for Value {
         fn eq(&self, other: &Self) -> bool {
             if self.is_number() && other.is_number() {
@@ -510,75 +401,36 @@ mod value_nan {
 
     impl From<bool> for Value {
         fn from(value: bool) -> Self {
-            Self::bool_val(value)
+            Value(if value { TRUE_MASK } else { FALSE_MASK })
         }
     }
 
     impl From<f64> for Value {
         fn from(value: f64) -> Self {
-            Self::num_to_value(value)
+            Value(f64::to_bits(value))
         }
     }
 
     impl From<()> for Value {
         fn from(_: ()) -> Self {
-            Self::nil_val()
+            Value(NIL_MASK)
         }
     }
 
     impl From<*mut Obj> for Value {
         fn from(value: *mut Obj) -> Self {
-            Self::obj_val(value)
+            Value(SIGN_BIT | QNAN | (value as u64))
         }
     }
 
-    impl From<*mut ObjString> for Value {
-        fn from(value: *mut ObjString) -> Self {
-            Self::obj_val(value as *mut Obj)
+    impl<T> From<*mut T> for Value
+    where
+        T: ObjPtrTarget,
+    {
+        fn from(value: *mut T) -> Self {
+            Self::from(value as *mut Obj)
         }
     }
-
-    impl From<*mut ObjFunction> for Value {
-        fn from(value: *mut ObjFunction) -> Self {
-            Self::obj_val(value as *mut Obj)
-        }
-    }
-
-    impl From<*mut ObjNative> for Value {
-        fn from(value: *mut ObjNative) -> Self {
-            Self::obj_val(value as *mut Obj)
-        }
-    }
-
-    impl From<*mut ObjClosure> for Value {
-        fn from(value: *mut ObjClosure) -> Self {
-            Self::obj_val(value as *mut Obj)
-        }
-    }
-
-    impl From<*mut ObjClass> for Value {
-        fn from(value: *mut ObjClass) -> Self {
-            Self::obj_val(value as *mut Obj)
-        }
-    }
-
-    impl From<*mut ObjInstance> for Value {
-        fn from(value: *mut ObjInstance) -> Self {
-            Self::obj_val(value as *mut Obj)
-        }
-    }
-
-    impl From<*mut ObjBoundMethod> for Value {
-        fn from(value: *mut ObjBoundMethod) -> Self {
-            Self::obj_val(value as *mut Obj)
-        }
-    }
-
-    pub const SIGN_BIT: Value = Value(0x8000000000000000);
-    pub const QNAN: Value = Value(0x7ffc000000000000);
-    pub const TAG_NIL: Value = Value(1);
-    pub const TAG_FALSE: Value = Value(2);
-    pub const TAG_TRUE: Value = Value(3);
 }
 
 #[cfg(value_repr = "union")]

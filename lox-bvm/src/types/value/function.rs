@@ -1,6 +1,7 @@
 use crate::types::{
     chunk::Chunk,
     value::{
+        ObjPtrTarget,
         obj::{Obj, ObjType, allocate_object},
         string::ObjString,
     },
@@ -14,6 +15,8 @@ pub struct ObjFunction {
     pub name: *mut ObjString,
     pub upvalue_count: usize,
 }
+
+impl ObjPtrTarget for ObjFunction {}
 
 impl ObjFunction {
     pub fn new(objects: *mut *mut Obj) -> *mut ObjFunction {

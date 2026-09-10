@@ -1,7 +1,7 @@
 use crate::{
     collections::hashtable::HashTable,
     types::value::{
-        Value,
+        ObjPtrTarget, Value,
         closure::ObjClosure,
         obj::{Obj, ObjType, allocate_object},
         string::ObjString,
@@ -14,6 +14,8 @@ pub struct ObjClass {
     pub name: *mut ObjString,
     pub methods: HashTable,
 }
+
+impl ObjPtrTarget for ObjClass {}
 
 impl ObjClass {
     pub fn new(objects: *mut *mut Obj, name: *mut ObjString) -> *mut ObjClass {
@@ -39,6 +41,8 @@ pub struct ObjInstance {
     pub fields: HashTable,
 }
 
+impl ObjPtrTarget for ObjInstance {}
+
 impl ObjInstance {
     pub fn new(objects: *mut *mut Obj, class: *mut ObjClass) -> *mut ObjInstance {
         allocate_instance(objects, class)
@@ -62,6 +66,8 @@ pub struct ObjBoundMethod {
     pub receiver: Value,
     pub method: *mut ObjClosure,
 }
+
+impl ObjPtrTarget for ObjBoundMethod {}
 
 impl ObjBoundMethod {
     pub fn new(

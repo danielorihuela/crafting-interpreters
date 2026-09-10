@@ -1,5 +1,5 @@
 use crate::types::value::{
-    Value,
+    ObjPtrTarget, Value,
     obj::{Obj, ObjType, allocate_object},
 };
 
@@ -10,6 +10,8 @@ pub struct ObjUpvalue {
     pub next: *mut ObjUpvalue,
     pub closed: Value,
 }
+
+impl ObjPtrTarget for ObjUpvalue {}
 
 impl ObjUpvalue {
     pub fn new(objects: *mut *mut Obj, slot: *mut Value) -> *mut ObjUpvalue {
