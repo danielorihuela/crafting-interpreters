@@ -1,6 +1,6 @@
 use std::{fmt::Display, mem::transmute};
 
-use crate::types::value::{OperationError, Value};
+use crate::types::value::Value;
 
 #[repr(u8)]
 #[derive(Debug)]
@@ -56,7 +56,9 @@ pub enum OpCode {
 }
 
 impl OpCode {
-    pub fn maybe_binary_op(&self) -> Option<fn(Value, Value) -> Result<Value, OperationError>> {
+    pub fn maybe_binary_op(
+        &self,
+    ) -> Option<fn(Value, Value) -> Result<Value, Box<dyn std::error::Error>>> {
         match self {
             OpCode::Subtract => Some(|a, b| a - b),
             OpCode::Multiply => Some(|a, b| a * b),
@@ -65,14 +67,14 @@ impl OpCode {
                 if a.is_number() && b.is_number() {
                     Ok(Value::from(a > b))
                 } else {
-                    Err(OperationError("Operands must be numbers.".to_string()))
+                    Err("Operands must be numbers.".into())
                 }
             }),
             OpCode::Less => Some(|a, b| {
                 if a.is_number() && b.is_number() {
                     Ok(Value::from(a < b))
                 } else {
-                    Err(OperationError("Operands must be numbers.".to_string()))
+                    Err("Operands must be numbers.".into())
                 }
             }),
             _ => None,

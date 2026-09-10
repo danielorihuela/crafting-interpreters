@@ -179,7 +179,7 @@ impl VM {
                     match result {
                         Ok(v) => self.stack.push(v),
                         Err(e) => {
-                            self.runtime_error(&e);
+                            self.runtime_error(&e.to_string());
                             return InterpretResult::RuntimeError;
                         }
                     }
@@ -195,7 +195,7 @@ impl VM {
                         match op(a, b) {
                             Ok(result) => self.stack.push(result),
                             Err(e) => {
-                                self.runtime_error(&e);
+                                self.runtime_error(&e.to_string());
                                 return InterpretResult::RuntimeError;
                             }
                         }
