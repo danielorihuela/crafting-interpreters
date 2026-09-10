@@ -4,13 +4,13 @@ use std::ptr::drop_in_place;
 use crate::collections::hashtable::HashTable;
 use crate::memory::alloc::reallocate;
 use crate::memory::array::free_array;
-use crate::types::value::Value;
 use crate::types::value::class::{ObjBoundMethod, ObjClass, ObjInstance};
 use crate::types::value::closure::ObjClosure;
 use crate::types::value::function::ObjFunction;
 use crate::types::value::native::ObjNative;
 use crate::types::value::string::ObjString;
 use crate::types::value::upvalue::ObjUpvalue;
+use crate::types::value::{ObjPtrTarget, Value};
 use crate::{COMPILER_INSTANCE, DEBUG_LOG_GC, VM_INSTANCE};
 
 const GC_HEAP_GROW_FACTOR: usize = 2;
@@ -32,6 +32,8 @@ pub struct Obj {
     pub next: ObjPtr,
     pub is_marked: bool,
 }
+
+impl ObjPtrTarget for Obj {}
 
 pub fn allocate_object<T>(obj_type: ObjType, objects: *mut *mut Obj) -> *mut T {
     let obj = reallocate(std::ptr::null_mut::<T>(), 0, 1);

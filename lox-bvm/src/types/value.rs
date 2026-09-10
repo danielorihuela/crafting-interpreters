@@ -203,15 +203,6 @@ mod value_union {
         }
     }
 
-    impl From<*mut Obj> for Value {
-        fn from(value: *mut Obj) -> Self {
-            Self {
-                vtype: ValueType::Obj,
-                vunion: ValueUnion { obj: value },
-            }
-        }
-    }
-
     impl<T> From<*mut T> for Value
     where
         T: ObjPtrTarget,
@@ -417,18 +408,12 @@ mod value_nan {
         }
     }
 
-    impl From<*mut Obj> for Value {
-        fn from(value: *mut Obj) -> Self {
-            Value(SIGN_BIT | QNAN | (value as u64))
-        }
-    }
-
     impl<T> From<*mut T> for Value
     where
         T: ObjPtrTarget,
     {
         fn from(value: *mut T) -> Self {
-            Self::from(value as *mut Obj)
+            Value(SIGN_BIT | QNAN | (value as *mut Obj as u64))
         }
     }
 }
@@ -499,6 +484,22 @@ impl PartialOrd for Value {
     }
 }
 
+macro_rules! value_obj_accessors {
+    ($($ty:ident),+ $(,)?) => {
+        paste::paste! {
+            $(
+                pub fn [<is_ $ty:snake>](&self) -> bool {
+                    self.is_obj_type(&ObjType::$ty)
+                }
+
+                pub fn [<as_ $ty:snake>](&self) -> *mut [<Obj $ty>] {
+                    self.as_obj() as *mut [<Obj $ty>]
+                }
+            )+
+        }
+    };
+}
+
 impl Value {
     pub fn is_falsey(&self) -> bool {
         self.is_nil() || (self.is_bool() && !self.as_bool())
@@ -512,64 +513,18 @@ impl Value {
         self.is_obj() && self.obj_type() == otype
     }
 
-    pub fn is_string(&self) -> bool {
-        self.is_obj() && self.obj_type() == &ObjType::String
-    }
-
-    pub fn is_function(&self) -> bool {
-        self.is_obj() && self.obj_type() == &ObjType::Function
-    }
-
-    pub fn is_native(&self) -> bool {
-        self.is_obj() && self.obj_type() == &ObjType::Native
-    }
-
-    pub fn is_closure(&self) -> bool {
-        self.is_obj() && self.obj_type() == &ObjType::Closure
-    }
-
-    pub fn is_class(&self) -> bool {
-        self.is_obj() && self.obj_type() == &ObjType::Class
-    }
-
-    pub fn is_instance(&self) -> bool {
-        self.is_obj() && self.obj_type() == &ObjType::Instance
-    }
-
-    pub fn is_bound_method(&self) -> bool {
-        self.is_obj() && self.obj_type() == &ObjType::BoundMethod
-    }
-
-    pub fn as_string(&self) -> *mut ObjString {
-        self.as_obj() as *mut ObjString
-    }
+    value_obj_accessors!(
+        String,
+        Function,
+        Native,
+        Closure,
+        Class,
+        Instance,
+        BoundMethod
+    );
 
     pub fn as_cstring(&self) -> *mut AsciiChar {
         unsafe { (*self.as_string()).chars }
-    }
-
-    pub fn as_function(&self) -> *mut ObjFunction {
-        self.as_obj() as *mut ObjFunction
-    }
-
-    pub fn as_native(&self) -> *mut ObjNative {
-        self.as_obj() as *mut ObjNative
-    }
-
-    pub fn as_closure(&self) -> *mut ObjClosure {
-        self.as_obj() as *mut ObjClosure
-    }
-
-    pub fn as_class(&self) -> *mut ObjClass {
-        self.as_obj() as *mut ObjClass
-    }
-
-    pub fn as_instance(&self) -> *mut ObjInstance {
-        self.as_obj() as *mut ObjInstance
-    }
-
-    pub fn as_bound_method(&self) -> *mut ObjBoundMethod {
-        self.as_obj() as *mut ObjBoundMethod
     }
 }
 
