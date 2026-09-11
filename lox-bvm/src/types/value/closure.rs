@@ -7,6 +7,7 @@ use crate::{
         upvalue::ObjUpvalue,
     },
 };
+use std::fmt::Display;
 
 #[repr(C)]
 pub struct ObjClosure {
@@ -17,6 +18,17 @@ pub struct ObjClosure {
 }
 
 impl ObjPtrTarget for ObjClosure {}
+
+impl Display for ObjClosure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.function.is_null() {
+            write!(f, "<script>")
+        } else {
+            let function = unsafe { &*self.function };
+            write!(f, "{}", function)
+        }
+    }
+}
 
 impl ObjClosure {
     pub fn new(objects: *mut *mut Obj, function: *mut ObjFunction) -> *mut ObjClosure {

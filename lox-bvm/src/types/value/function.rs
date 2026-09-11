@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use crate::types::{
     chunk::Chunk,
     value::{
@@ -17,6 +19,17 @@ pub struct ObjFunction {
 }
 
 impl ObjPtrTarget for ObjFunction {}
+
+impl Display for ObjFunction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.name.is_null() {
+            write!(f, "<script>")
+        } else {
+            let name = unsafe { &*self.name };
+            write!(f, "<fn {}>", name)
+        }
+    }
+}
 
 impl ObjFunction {
     pub fn new(objects: *mut *mut Obj) -> *mut ObjFunction {

@@ -32,13 +32,7 @@ mod value_union {
 
     use super::ObjPtrTarget;
 
-    use crate::types::value::{
-        class::{ObjBoundMethod, ObjClass, ObjInstance},
-        closure::ObjClosure,
-        function::ObjFunction,
-        obj::{Obj, ObjType},
-        string::ObjString,
-    };
+    use crate::types::value::obj::{Obj, ObjPtr};
 
     #[repr(u8)]
     #[derive(PartialEq, Default)]
@@ -76,65 +70,7 @@ mod value_union {
                 ValueType::Bool => write!(f, "{}", self.as_bool()),
                 ValueType::Number => write!(f, "{}", self.as_number()),
                 ValueType::Nil => write!(f, "nil"),
-                ValueType::Obj => {
-                    let data = match self.obj_type() {
-                        ObjType::String => {
-                            let s = self.as_obj() as *mut ObjString;
-
-                            let string = unsafe {
-                                std::str::from_utf8_unchecked(std::slice::from_raw_parts(
-                                    (*s).chars,
-                                    (*s).length,
-                                ))
-                            };
-
-                            string.to_string()
-                        }
-                        ObjType::Function => {
-                            let function = self.as_obj() as *mut ObjFunction;
-                            if unsafe { (*function).name.is_null() } {
-                                "<script>".to_string()
-                            } else {
-                                let value_name = Value::from(unsafe { (*function).name });
-                                format!("<fn {}>", value_name)
-                            }
-                        }
-                        ObjType::Closure => {
-                            let closure = self.as_obj() as *mut ObjClosure;
-                            let function = unsafe { (*closure).function };
-                            if unsafe { (*function).name.is_null() } {
-                                "<script>".to_string()
-                            } else {
-                                let value_name = Value::from(unsafe { (*function).name });
-                                format!("<fn {}>", value_name)
-                            }
-                        }
-                        ObjType::Native => "<native fn>".to_string(),
-                        ObjType::Upvalue => "upvalue".to_string(),
-                        ObjType::Class => {
-                            let class = self.as_obj() as *mut ObjClass;
-                            let value_name = Value::from(unsafe { (*class).name });
-                            format!("{}", value_name)
-                        }
-                        ObjType::Instance => {
-                            let instance = self.as_obj() as *mut ObjInstance;
-                            let class = unsafe { (*instance).class };
-                            let value_name = Value::from(unsafe { (*class).name });
-                            format!("{} instance", value_name)
-                        }
-                        ObjType::BoundMethod => {
-                            let bound_method = self.as_obj() as *mut ObjBoundMethod;
-                            let method = unsafe { (*(*bound_method).method).function };
-                            if unsafe { (*method).name.is_null() } {
-                                "<script>".to_string()
-                            } else {
-                                let value_name = Value::from(unsafe { (*method).name });
-                                format!("<fn {}>", value_name)
-                            }
-                        }
-                    };
-                    write!(f, "{}", data)
-                }
+                ValueType::Obj => write!(f, "{}", ObjPtr::from(self.as_obj()).to_string()),
             }
         }
     }
@@ -254,13 +190,7 @@ mod value_nan {
 
     use std::fmt::{Debug, Display};
 
-    use crate::types::value::{
-        class::{ObjBoundMethod, ObjClass, ObjInstance},
-        closure::ObjClosure,
-        function::ObjFunction,
-        obj::{Obj, ObjType},
-        string::ObjString,
-    };
+    use crate::types::value::obj::{Obj, ObjPtr};
 
     const SIGN_BIT: u64 = 0x8000000000000000;
 
@@ -318,63 +248,7 @@ mod value_nan {
             } else if self.is_number() {
                 return write!(f, "{}", self.as_number());
             } else if self.is_obj() {
-                let data = match self.obj_type() {
-                    ObjType::String => {
-                        let s = self.as_obj() as *mut ObjString;
-
-                        let string = unsafe {
-                            std::str::from_utf8_unchecked(std::slice::from_raw_parts(
-                                (*s).chars,
-                                (*s).length,
-                            ))
-                        };
-
-                        string.to_string()
-                    }
-                    ObjType::Function => {
-                        let function = self.as_obj() as *mut ObjFunction;
-                        if unsafe { (*function).name.is_null() } {
-                            "<script>".to_string()
-                        } else {
-                            let value_name = Value::from(unsafe { (*function).name });
-                            format!("<fn {}>", value_name)
-                        }
-                    }
-                    ObjType::Closure => {
-                        let closure = self.as_obj() as *mut ObjClosure;
-                        let function = unsafe { (*closure).function };
-                        if unsafe { (*function).name.is_null() } {
-                            "<script>".to_string()
-                        } else {
-                            let value_name = Value::from(unsafe { (*function).name });
-                            format!("<fn {}>", value_name)
-                        }
-                    }
-                    ObjType::Native => "<native fn>".to_string(),
-                    ObjType::Upvalue => "upvalue".to_string(),
-                    ObjType::Class => {
-                        let class = self.as_obj() as *mut ObjClass;
-                        let value_name = Value::from(unsafe { (*class).name });
-                        format!("{}", value_name)
-                    }
-                    ObjType::Instance => {
-                        let instance = self.as_obj() as *mut ObjInstance;
-                        let class = unsafe { (*instance).class };
-                        let value_name = Value::from(unsafe { (*class).name });
-                        format!("{} instance", value_name)
-                    }
-                    ObjType::BoundMethod => {
-                        let bound_method = self.as_obj() as *mut ObjBoundMethod;
-                        let method = unsafe { (*(*bound_method).method).function };
-                        if unsafe { (*method).name.is_null() } {
-                            "<script>".to_string()
-                        } else {
-                            let value_name = Value::from(unsafe { (*method).name });
-                            format!("<fn {}>", value_name)
-                        }
-                    }
-                };
-                return write!(f, "{}", data);
+                return write!(f, "{}", ObjPtr::from(self.as_obj()).to_string());
             }
 
             return write!(f, "<unknown>");

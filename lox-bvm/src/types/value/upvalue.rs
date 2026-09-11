@@ -2,6 +2,7 @@ use crate::types::value::{
     ObjPtrTarget, Value,
     obj::{Obj, ObjType, allocate_object},
 };
+use std::fmt::Display;
 
 #[repr(C)]
 pub struct ObjUpvalue {
@@ -12,6 +13,12 @@ pub struct ObjUpvalue {
 }
 
 impl ObjPtrTarget for ObjUpvalue {}
+
+impl Display for ObjUpvalue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<upvalue>")
+    }
+}
 
 impl ObjUpvalue {
     pub fn new(objects: *mut *mut Obj, slot: *mut Value) -> *mut ObjUpvalue {

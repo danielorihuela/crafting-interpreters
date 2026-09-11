@@ -17,6 +17,13 @@ pub struct ObjClass {
 
 impl ObjPtrTarget for ObjClass {}
 
+impl Display for ObjClass {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", unsafe { (*self.name).to_string() })
+    }
+}
+use std::fmt::Display;
+
 impl ObjClass {
     pub fn new(objects: *mut *mut Obj, name: *mut ObjString) -> *mut ObjClass {
         allocate_class(objects, name)
@@ -43,6 +50,12 @@ pub struct ObjInstance {
 
 impl ObjPtrTarget for ObjInstance {}
 
+impl Display for ObjInstance {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} instance", unsafe { (*self.class).to_string() })
+    }
+}
+
 impl ObjInstance {
     pub fn new(objects: *mut *mut Obj, class: *mut ObjClass) -> *mut ObjInstance {
         allocate_instance(objects, class)
@@ -68,6 +81,17 @@ pub struct ObjBoundMethod {
 }
 
 impl ObjPtrTarget for ObjBoundMethod {}
+
+impl Display for ObjBoundMethod {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let function = unsafe { (*self.method).function };
+        if unsafe { (*function).name.is_null() } {
+            write!(f, "<script>")
+        } else {
+            write!(f, "<fn {}>", unsafe { (*(*function).name).to_string() })
+        }
+    }
+}
 
 impl ObjBoundMethod {
     pub fn new(

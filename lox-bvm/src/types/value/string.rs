@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use std::ptr::copy_nonoverlapping;
 
 use crate::VM_INSTANCE;
@@ -19,6 +20,14 @@ pub struct ObjString {
 }
 
 impl ObjPtrTarget for ObjString {}
+
+impl Display for ObjString {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let slice = unsafe { std::slice::from_raw_parts(self.chars, self.length) };
+        let s = std::str::from_utf8(slice).map_err(|_| std::fmt::Error)?;
+        write!(f, "{}", s)
+    }
+}
 
 impl ObjString {
     pub fn new(

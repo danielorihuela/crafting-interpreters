@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use std::ops::{Deref, DerefMut};
 use std::ptr::drop_in_place;
 
@@ -34,6 +35,46 @@ pub struct Obj {
 }
 
 impl ObjPtrTarget for Obj {}
+
+impl Display for ObjPtr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let data = match self.otype {
+            ObjType::String => {
+                let s = self.0 as *mut ObjString;
+                unsafe { (*s).to_string() }
+            }
+            ObjType::Function => {
+                let function = self.0 as *mut ObjFunction;
+                unsafe { (*function).to_string() }
+            }
+            ObjType::Closure => {
+                let closure = self.0 as *mut ObjClosure;
+                unsafe { (*closure).to_string() }
+            }
+            ObjType::Native => {
+                let native = self.0 as *mut ObjNative;
+                unsafe { (*native).to_string() }
+            }
+            ObjType::Upvalue => {
+                let upvalue = self.0 as *mut ObjUpvalue;
+                unsafe { (*upvalue).to_string() }
+            }
+            ObjType::Class => {
+                let class = self.0 as *mut ObjClass;
+                unsafe { (*class).to_string() }
+            }
+            ObjType::Instance => {
+                let instance = self.0 as *mut ObjInstance;
+                unsafe { (*instance).to_string() }
+            }
+            ObjType::BoundMethod => {
+                let bound_method = self.0 as *mut ObjBoundMethod;
+                unsafe { (*bound_method).to_string() }
+            }
+        };
+        return write!(f, "{}", data);
+    }
+}
 
 pub fn allocate_object<T>(obj_type: ObjType, objects: *mut *mut Obj) -> *mut T {
     let obj = reallocate(std::ptr::null_mut::<T>(), 0, 1);

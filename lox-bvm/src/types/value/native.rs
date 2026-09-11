@@ -2,6 +2,7 @@ use crate::types::value::{
     ObjPtrTarget, Value,
     obj::{Obj, ObjType, allocate_object},
 };
+use std::fmt::Display;
 
 pub type NativeFn = fn(usize, *mut Value) -> Value;
 
@@ -12,6 +13,12 @@ pub struct ObjNative {
 }
 
 impl ObjPtrTarget for ObjNative {}
+
+impl Display for ObjNative {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<native fn>")
+    }
+}
 
 impl ObjNative {
     pub fn new(function: NativeFn, objects: *mut *mut Obj) -> *mut ObjNative {
