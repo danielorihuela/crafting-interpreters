@@ -1,4 +1,4 @@
-use std::{ffi::CString, mem::transmute, slice::from_raw_parts, str::from_utf8_unchecked};
+use std::{mem::transmute, slice::from_raw_parts, str::from_utf8_unchecked};
 
 use crate::{
     AsciiChar, COMPILER_INSTANCE,
@@ -76,7 +76,10 @@ impl<'a> Parser<'a> {
                 break;
             }
 
-            self.error_at_current(self.current.start);
+            let message = unsafe {
+                from_utf8_unchecked(from_raw_parts(self.current.start, self.current.length))
+            };
+            self.error_at_current(message);
         }
     }
 
@@ -97,13 +100,7 @@ impl<'a> Parser<'a> {
     }
 
     fn class_declaration(&mut self) {
-        self.consume(
-            TokenType::Identifier,
-            CString::new("Expect class name.")
-                .unwrap()
-                .as_bytes_with_nul()
-                .as_ptr(),
-        );
+        self.consume(TokenType::Identifier, "Expect class name.");
         let class_name = self.previous.clone();
         let name_constant = self.identifier_constant();
         self.declare_variable();
@@ -118,22 +115,11 @@ impl<'a> Parser<'a> {
         self.current_class = Box::into_raw(class_compiler);
 
         if self.match_type(TokenType::Less) {
-            self.consume(
-                TokenType::Identifier,
-                CString::new("Expect superclass name.")
-                    .unwrap()
-                    .as_bytes_with_nul()
-                    .as_ptr(),
-            );
+            self.consume(TokenType::Identifier, "Expect superclass name.");
             self.variable(false);
 
             if self.identifiers_equal(&class_name, &self.previous) {
-                self.error(
-                    CString::new("A class can't inherit from itself.")
-                        .unwrap()
-                        .as_bytes_with_nul()
-                        .as_ptr(),
-                );
+                self.error("A class can't inherit from itself.");
             }
 
             self.begin_scope();
@@ -146,23 +132,11 @@ impl<'a> Parser<'a> {
         }
 
         self.named_variable_with(&class_name, false);
-        self.consume(
-            TokenType::LeftBrace,
-            CString::new("Expect '{' before class body.")
-                .unwrap()
-                .as_bytes_with_nul()
-                .as_ptr(),
-        );
+        self.consume(TokenType::LeftBrace, "Expect '{' before class body.");
         while self.current.ttype != TokenType::RightBrace && self.current.ttype != TokenType::Eof {
             self.method();
         }
-        self.consume(
-            TokenType::RightBrace,
-            CString::new("Expect '}' after class body.")
-                .unwrap()
-                .as_bytes_with_nul()
-                .as_ptr(),
-        );
+        self.consume(TokenType::RightBrace, "Expect '}' after class body.");
         self.emit_byte(OpCode::Pop);
 
         if !self.current_class.is_null() {
@@ -189,13 +163,7 @@ impl<'a> Parser<'a> {
     }
 
     fn method(&mut self) {
-        self.consume(
-            TokenType::Identifier,
-            CString::new("Expect method name.")
-                .unwrap()
-                .as_bytes_with_nul()
-                .as_ptr(),
-        );
+        self.consume(TokenType::Identifier, "Expect method name.");
         let constant = self.identifier_constant();
 
         if self.previous.length == 4
@@ -233,24 +201,13 @@ impl<'a> Parser<'a> {
 
         self.begin_scope();
 
-        self.consume(
-            TokenType::LeftParen,
-            CString::new("Expect '(' after function name.")
-                .unwrap()
-                .as_bytes_with_nul()
-                .as_ptr(),
-        );
+        self.consume(TokenType::LeftParen, "Expect '(' after function name.");
 
         if self.current.ttype != TokenType::RightParen {
             loop {
                 unsafe { (*(*self.compiler).function).arity += 1 };
                 if unsafe { (*(*self.compiler).function).arity } > 255 {
-                    self.error_at_current(
-                        CString::new("Can't have more than 255 parameters.")
-                            .unwrap()
-                            .as_bytes_with_nul()
-                            .as_ptr(),
-                    );
+                    self.error_at_current("Can't have more than 255 parameters.");
                 }
 
                 let constant = self.parse_variable("Expect parameter name.");
@@ -262,20 +219,8 @@ impl<'a> Parser<'a> {
             }
         }
 
-        self.consume(
-            TokenType::RightParen,
-            CString::new("Expect ')' after parameters.")
-                .unwrap()
-                .as_bytes_with_nul()
-                .as_ptr(),
-        );
-        self.consume(
-            TokenType::LeftBrace,
-            CString::new("Expect '{' before function body.")
-                .unwrap()
-                .as_bytes_with_nul()
-                .as_ptr(),
-        );
+        self.consume(TokenType::RightParen, "Expect ')' after parameters.");
+        self.consume(TokenType::LeftBrace, "Expect '{' before function body.");
         self.block();
 
         let function = self.end_compiler();
@@ -299,10 +244,7 @@ impl<'a> Parser<'a> {
         }
         self.consume(
             TokenType::Semicolon,
-            CString::new("Expect ';' after variable declaration.")
-                .unwrap()
-                .as_bytes_with_nul()
-                .as_ptr(),
+            "Expect ';' after variable declaration.",
         );
         self.define_variable(global);
     }
@@ -319,12 +261,7 @@ impl<'a> Parser<'a> {
             }
 
             if self.identifiers_equal(&local.name, &self.previous) {
-                self.error(
-                    CString::new("Already a variable with this name in this scope.")
-                        .unwrap()
-                        .as_bytes_with_nul()
-                        .as_ptr(),
-                );
+                self.error("Already a variable with this name in this scope.");
             }
         }
 
@@ -344,12 +281,7 @@ impl<'a> Parser<'a> {
 
     fn add_local(&mut self) {
         if unsafe { (*self.compiler).local_count } == (u8::MAX as usize + 1) {
-            self.error(
-                CString::new("Too many local variables in function.")
-                    .unwrap()
-                    .as_bytes_with_nul()
-                    .as_ptr(),
-            );
+            self.error("Too many local variables in function.");
             return;
         }
 
@@ -362,12 +294,7 @@ impl<'a> Parser<'a> {
 
     fn add_local_for(&mut self, name: Token) {
         if unsafe { (*self.compiler).local_count } == (u8::MAX as usize + 1) {
-            self.error(
-                CString::new("Too many local variables in function.")
-                    .unwrap()
-                    .as_bytes_with_nul()
-                    .as_ptr(),
-            );
+            self.error("Too many local variables in function.");
             return;
         }
 
@@ -379,13 +306,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_variable(&mut self, error_message: &str) -> u8 {
-        self.consume(
-            TokenType::Identifier,
-            CString::new(error_message)
-                .unwrap()
-                .as_bytes_with_nul()
-                .as_ptr(),
-        );
+        self.consume(TokenType::Identifier, error_message);
 
         self.declare_variable();
         if unsafe { (*self.compiler).scope_depth } > 0 {
@@ -446,32 +367,14 @@ impl<'a> Parser<'a> {
 
     fn print_statement(&mut self) {
         self.expression();
-        self.consume(
-            TokenType::Semicolon,
-            CString::new("Expect ';' after value.")
-                .unwrap()
-                .as_bytes_with_nul()
-                .as_ptr(),
-        );
+        self.consume(TokenType::Semicolon, "Expect ';' after value.");
         self.emit_byte(OpCode::Print);
     }
 
     fn if_statement(&mut self) {
-        self.consume(
-            TokenType::LeftParen,
-            CString::new("Expect '(' after 'if'.")
-                .unwrap()
-                .as_bytes_with_nul()
-                .as_ptr(),
-        );
+        self.consume(TokenType::LeftParen, "Expect '(' after 'if'.");
         self.expression();
-        self.consume(
-            TokenType::RightParen,
-            CString::new("Expect ')' after condition.")
-                .unwrap()
-                .as_bytes_with_nul()
-                .as_ptr(),
-        );
+        self.consume(TokenType::RightParen, "Expect ')' after condition.");
 
         let then_jump = self.emit_jump(OpCode::JumpIfFalse);
         self.emit_byte(OpCode::Pop);
@@ -490,55 +393,27 @@ impl<'a> Parser<'a> {
 
     fn return_statement(&mut self) {
         if unsafe { &(*self.compiler).ftype } == &FunctionType::Script {
-            self.error(
-                CString::new("Can't return from top-level code.")
-                    .unwrap()
-                    .as_bytes_with_nul()
-                    .as_ptr(),
-            );
+            self.error("Can't return from top-level code.");
         }
 
         if self.match_type(TokenType::Semicolon) {
             self.emit_return();
         } else {
             if unsafe { (*self.compiler).ftype.clone() } == FunctionType::Initializer {
-                self.error(
-                    CString::new("Can't return a value from an initializer.")
-                        .unwrap()
-                        .as_bytes_with_nul()
-                        .as_ptr(),
-                );
+                self.error("Can't return a value from an initializer.");
             }
 
             self.expression();
-            self.consume(
-                TokenType::Semicolon,
-                CString::new("Expect ';' after return value.")
-                    .unwrap()
-                    .as_bytes_with_nul()
-                    .as_ptr(),
-            );
+            self.consume(TokenType::Semicolon, "Expect ';' after return value.");
             self.emit_byte(OpCode::Return);
         }
     }
 
     fn while_statement(&mut self) {
         let loop_start = unsafe { (*(*self.compiler).function).chunk.code.count };
-        self.consume(
-            TokenType::LeftParen,
-            CString::new("Expect '(' after 'while'.")
-                .unwrap()
-                .as_bytes_with_nul()
-                .as_ptr(),
-        );
+        self.consume(TokenType::LeftParen, "Expect '(' after 'while'.");
         self.expression();
-        self.consume(
-            TokenType::RightParen,
-            CString::new("Expect ')' after condition.")
-                .unwrap()
-                .as_bytes_with_nul()
-                .as_ptr(),
-        );
+        self.consume(TokenType::RightParen, "Expect ')' after condition.");
 
         let exit_jump = self.emit_jump(OpCode::JumpIfFalse);
         self.emit_byte(OpCode::Pop);
@@ -551,13 +426,7 @@ impl<'a> Parser<'a> {
 
     fn for_statement(&mut self) {
         self.begin_scope();
-        self.consume(
-            TokenType::LeftParen,
-            CString::new("Expect '(' after 'for'.")
-                .unwrap()
-                .as_bytes_with_nul()
-                .as_ptr(),
-        );
+        self.consume(TokenType::LeftParen, "Expect '(' after 'for'.");
         if self.match_type(TokenType::Semicolon) {
             // No initializer.
         } else if self.match_type(TokenType::Var) {
@@ -570,13 +439,7 @@ impl<'a> Parser<'a> {
         let mut exit_jump = -1;
         if !self.match_type(TokenType::Semicolon) {
             self.expression();
-            self.consume(
-                TokenType::Semicolon,
-                CString::new("Expect ';' after loop condition.")
-                    .unwrap()
-                    .as_bytes_with_nul()
-                    .as_ptr(),
-            );
+            self.consume(TokenType::Semicolon, "Expect ';' after loop condition.");
 
             exit_jump = self.emit_jump(OpCode::JumpIfFalse) as isize;
             self.emit_byte(OpCode::Pop);
@@ -587,13 +450,7 @@ impl<'a> Parser<'a> {
             let increment_start = unsafe { (*(*self.compiler).function).chunk.code.count };
             self.expression();
             self.emit_byte(OpCode::Pop);
-            self.consume(
-                TokenType::RightParen,
-                CString::new("Expect ')' after for clauses.")
-                    .unwrap()
-                    .as_bytes_with_nul()
-                    .as_ptr(),
-            );
+            self.consume(TokenType::RightParen, "Expect ')' after for clauses.");
 
             self.emit_loop(loop_start);
             loop_start = increment_start;
@@ -614,12 +471,7 @@ impl<'a> Parser<'a> {
 
         let offset = unsafe { (*(*self.compiler).function).chunk.code.count - loop_start + 2 };
         if offset > u16::MAX as usize {
-            self.error(
-                CString::new("Loop body too large.")
-                    .unwrap()
-                    .as_bytes_with_nul()
-                    .as_ptr(),
-            );
+            self.error("Loop body too large.");
         }
 
         self.emit_byte(((offset >> 8) & 0xff) as u8);
@@ -637,12 +489,7 @@ impl<'a> Parser<'a> {
     fn patch_jump(&mut self, offset: usize) {
         let jump = unsafe { (*(*self.compiler).function).chunk.code.count - offset - 2 };
         if jump > u16::MAX as usize {
-            self.error(
-                CString::new("Too much code to jump over.")
-                    .unwrap()
-                    .as_bytes_with_nul()
-                    .as_ptr(),
-            );
+            self.error("Too much code to jump over.");
         }
 
         unsafe {
@@ -660,13 +507,7 @@ impl<'a> Parser<'a> {
             self.declaration();
         }
 
-        self.consume(
-            TokenType::RightBrace,
-            CString::new("Expect '}' after block.")
-                .unwrap()
-                .as_bytes_with_nul()
-                .as_ptr(),
-        );
+        self.consume(TokenType::RightBrace, "Expect '}' after block.");
     }
 
     fn end_scope(&mut self) {
@@ -688,13 +529,7 @@ impl<'a> Parser<'a> {
 
     fn expression_statement(&mut self) {
         self.expression();
-        self.consume(
-            TokenType::Semicolon,
-            CString::new("Expect ';' after expression.")
-                .unwrap()
-                .as_bytes_with_nul()
-                .as_ptr(),
-        );
+        self.consume(TokenType::Semicolon, "Expect ';' after expression.");
         self.emit_byte(OpCode::Pop);
     }
 
@@ -735,12 +570,7 @@ impl<'a> Parser<'a> {
         if let Some(prefix) = prefix_rule {
             prefix(self, can_assign);
         } else {
-            self.error(
-                CString::new("Expect expression.")
-                    .unwrap()
-                    .as_bytes_with_nul()
-                    .as_ptr(),
-            );
+            self.error("Expect expression.");
             return;
         }
 
@@ -757,16 +587,11 @@ impl<'a> Parser<'a> {
         }
 
         if can_assign && self.match_type(TokenType::Equal) {
-            self.error(
-                CString::new("Invalid assignment target.")
-                    .unwrap()
-                    .as_bytes_with_nul()
-                    .as_ptr(),
-            );
+            self.error("Invalid assignment target.");
         }
     }
 
-    fn consume(&mut self, ttype: TokenType, message: *const AsciiChar) {
+    fn consume(&mut self, ttype: TokenType, message: &str) {
         if self.current.ttype == ttype {
             self.advance();
             return;
@@ -823,13 +648,7 @@ impl<'a> Parser<'a> {
 
     fn grouping(&mut self, can_assign: bool) {
         self.expression();
-        self.consume(
-            TokenType::RightParen,
-            CString::new("Expect ')' after expression.")
-                .unwrap()
-                .as_bytes_with_nul()
-                .as_ptr(),
-        );
+        self.consume(TokenType::RightParen, "Expect ')' after expression.");
     }
 
     fn unary(&mut self, can_assign: bool) {
@@ -875,13 +694,7 @@ impl<'a> Parser<'a> {
     }
 
     fn dot(&mut self, can_assign: bool) {
-        self.consume(
-            TokenType::Identifier,
-            CString::new("Expect property name after '.'.")
-                .unwrap()
-                .as_bytes_with_nul()
-                .as_ptr(),
-        );
+        self.consume(TokenType::Identifier, "Expect property name after '.'.");
         let name = self.identifier_constant();
 
         if can_assign && self.match_type(TokenType::Equal) {
@@ -910,12 +723,7 @@ impl<'a> Parser<'a> {
 
     fn this(&mut self, can_assign: bool) {
         if self.current_class.is_null() {
-            self.error(
-                CString::new("Can't use 'this' outside of a class.")
-                    .unwrap()
-                    .as_bytes_with_nul()
-                    .as_ptr(),
-            );
+            self.error("Can't use 'this' outside of a class.");
             return;
         }
         self.variable(false);
@@ -923,35 +731,13 @@ impl<'a> Parser<'a> {
 
     fn super_(&mut self, can_assign: bool) {
         if self.current_class.is_null() {
-            self.error(
-                CString::new("Can't use 'super' outside of a class.")
-                    .unwrap()
-                    .as_bytes_with_nul()
-                    .as_ptr(),
-            );
+            self.error("Can't use 'super' outside of a class.");
         } else if unsafe { !(*self.current_class).has_superclass } {
-            self.error(
-                CString::new("Can't use 'super' in a class with no superclass.")
-                    .unwrap()
-                    .as_bytes_with_nul()
-                    .as_ptr(),
-            );
+            self.error("Can't use 'super' in a class with no superclass.");
         }
 
-        self.consume(
-            TokenType::Dot,
-            CString::new("Expect '.' after 'super'.")
-                .unwrap()
-                .as_bytes_with_nul()
-                .as_ptr(),
-        );
-        self.consume(
-            TokenType::Identifier,
-            CString::new("Expect superclass method name.")
-                .unwrap()
-                .as_bytes_with_nul()
-                .as_ptr(),
-        );
+        self.consume(TokenType::Dot, "Expect '.' after 'super'.");
+        self.consume(TokenType::Identifier, "Expect superclass method name.");
         let name = self.identifier_constant();
 
         self.named_variable_with(&self.synthetic_token("this"), false);
@@ -1035,7 +821,7 @@ impl<'a> Parser<'a> {
             match add_upvalue(compiler, local as u8, true) {
                 Ok(index) => return index,
                 Err(message) => {
-                    self.error(CString::new(message).unwrap().as_bytes_with_nul().as_ptr());
+                    self.error(&message);
                     return 0;
                 }
             }
@@ -1046,7 +832,7 @@ impl<'a> Parser<'a> {
             match add_upvalue(compiler, upvalue as u8, false) {
                 Ok(index) => return index,
                 Err(message) => {
-                    self.error(CString::new(message).unwrap().as_bytes_with_nul().as_ptr());
+                    self.error(&message);
                     return 0;
                 }
             }
@@ -1084,12 +870,7 @@ impl<'a> Parser<'a> {
             loop {
                 self.expression();
                 if arg_count == 255 {
-                    self.error(
-                        CString::new("Can't have more than 255 arguments.")
-                            .unwrap()
-                            .as_bytes_with_nul()
-                            .as_ptr(),
-                    );
+                    self.error("Can't have more than 255 arguments.");
                 }
                 arg_count += 1;
 
@@ -1099,13 +880,7 @@ impl<'a> Parser<'a> {
             }
         }
 
-        self.consume(
-            TokenType::RightParen,
-            CString::new("Expect ')' after arguments.")
-                .unwrap()
-                .as_bytes_with_nul()
-                .as_ptr(),
-        );
+        self.consume(TokenType::RightParen, "Expect ')' after arguments.");
 
         arg_count
     }
@@ -1239,29 +1014,24 @@ impl<'a> Parser<'a> {
     fn make_constant(&mut self, value: Value) -> u8 {
         let constant = unsafe { (*(*self.compiler).function).chunk.add_constant(value) };
         if constant > u8::MAX as usize {
-            self.error(
-                CString::new("Too many constants in one chunk.")
-                    .unwrap()
-                    .as_bytes_with_nul()
-                    .as_ptr(),
-            );
+            self.error("Too many constants in one chunk.");
             return 0;
         }
 
         constant as u8
     }
 
-    fn error_at_current(&mut self, message: *const AsciiChar) {
+    fn error_at_current(&mut self, message: &str) {
         let token = &self.current.clone();
         self.error_at(token, message);
     }
 
-    fn error(&mut self, message: *const AsciiChar) {
+    fn error(&mut self, message: &str) {
         let token = &self.previous.clone();
         self.error_at(token, message);
     }
 
-    fn error_at(&mut self, token: &Token, message: *const AsciiChar) {
+    fn error_at(&mut self, token: &Token, message: &str) {
         if self.panic_mode {
             return;
         }
@@ -1278,8 +1048,7 @@ impl<'a> Parser<'a> {
             eprint!(" at '{}'", s);
         }
 
-        let s = unsafe { std::ffi::CStr::from_ptr(message as *const i8) };
-        eprintln!(": {}", s.to_string_lossy());
+        eprintln!(": {message}");
         self.had_error = true;
     }
 }
@@ -1289,12 +1058,7 @@ fn resolve_local(parser: &mut Parser, compiler: *mut Compiler, name: &Token) -> 
         let local = unsafe { &(*compiler).locals[i] };
         if parser.identifiers_equal(&local.name, name) {
             if local.depth == -1 {
-                parser.error(
-                    CString::new("Can't read local variable in its own initializer.")
-                        .unwrap()
-                        .as_bytes_with_nul()
-                        .as_ptr(),
-                );
+                parser.error("Can't read local variable in its own initializer.");
             }
             return i as isize;
         }
@@ -1446,6 +1210,8 @@ pub enum FunctionType {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use std::ffi::CString;
 
     use crate::collections::hashtable::HashTable;
     use crate::types::chunk::Chunk;

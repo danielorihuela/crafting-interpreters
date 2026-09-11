@@ -42,7 +42,7 @@ impl Scanner {
             b'"' => self.string(),
             x if x.is_ascii_digit() => self.number(),
             x if x.is_ascii_alphabetic() || x == b'_' => self.identifier(),
-            _ => self.error_token(b"Unexpected character.\0"),
+            _ => self.error_token(b"Unexpected character."),
         }
     }
 
@@ -83,7 +83,7 @@ impl Scanner {
             self.advance();
             self.make_token(TokenType::String)
         } else {
-            self.error_token(b"Unterminated string.\0")
+            self.error_token(b"Unterminated string.")
         }
     }
 

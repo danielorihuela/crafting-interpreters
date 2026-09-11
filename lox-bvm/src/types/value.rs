@@ -11,16 +11,13 @@ use std::{
     ops::{Add, Div, Mul, Sub},
 };
 
-use crate::types::{
-    AsciiChar,
-    value::{
-        class::{ObjBoundMethod, ObjClass, ObjInstance},
-        closure::ObjClosure,
-        function::ObjFunction,
-        native::ObjNative,
-        obj::ObjType,
-        string::ObjString,
-    },
+use crate::types::value::{
+    class::{ObjBoundMethod, ObjClass, ObjInstance},
+    closure::ObjClosure,
+    function::ObjFunction,
+    native::ObjNative,
+    obj::ObjType,
+    string::ObjString,
 };
 
 trait ObjPtrTarget {}
@@ -396,10 +393,6 @@ impl Value {
         Instance,
         BoundMethod
     );
-
-    pub fn as_cstring(&self) -> *mut AsciiChar {
-        unsafe { (*self.as_string()).chars }
-    }
 }
 
 #[cfg(test)]
