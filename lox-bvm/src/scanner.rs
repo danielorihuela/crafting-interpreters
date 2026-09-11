@@ -175,7 +175,7 @@ impl Scanner {
 
 #[cfg(test)]
 mod tests {
-    use std::ffi::CString;
+    use std::{ffi::CString, time::Instant};
 
     use super::*;
 
@@ -276,5 +276,25 @@ mod tests {
             assert_eq!(token.length, expected.1);
             assert_eq!(token.line, expected.2);
         }
+    }
+
+    #[test]
+    fn test_bench() {
+        let input = include_str!("../../benchmark.lox");
+        let input = input.repeat(2000);
+
+        let start = Instant::now();
+
+        let source = CString::new(input.as_str()).unwrap();
+        let mut scanner = Scanner::new(source.as_bytes_with_nul().as_ptr());
+        loop {
+            let token = scanner.get_token();
+            if token.ttype == TokenType::Eof {
+                break;
+            }
+        }
+
+        let string_time = start.elapsed();
+        println!("Scanner took {:?}", string_time);
     }
 }
