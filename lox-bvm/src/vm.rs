@@ -1,7 +1,7 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::{
-    AsciiChar, COMPILER_INSTANCE,
+    AsciiChar,
     collections::{dynarray::DynArray, hashtable::HashTable, stack::Stack},
     compiler::{Compiler, FunctionType, Parser},
     scanner::Scanner,
@@ -28,6 +28,7 @@ pub struct VM {
 
     pub stack: Stack<Value>,
     pub open_upvalues: *mut ObjUpvalue,
+    pub compiler: *mut Compiler,
     pub objects: *mut Obj,
     pub strings: HashTable,
     pub globals: HashTable,
@@ -56,6 +57,7 @@ impl VM {
             frame_count: 0,
             stack: Stack::default(),
             open_upvalues: std::ptr::null_mut(),
+            compiler: std::ptr::null_mut(),
             objects: std::ptr::null_mut(),
             strings: HashTable::new(),
             globals: HashTable::new(),
@@ -89,7 +91,7 @@ impl VM {
 
     pub fn interpret(&mut self, source: *const AsciiChar) -> InterpretResult {
         let scanner = &mut Scanner::new(source);
-        let compiler = &mut Compiler::new(
+        let mut compiler = Compiler::new(
             FunctionType::Script,
             &mut self.objects,
             &mut self.strings,
@@ -98,17 +100,11 @@ impl VM {
             0,
         );
 
-        unsafe {
-            COMPILER_INSTANCE = compiler as *mut Compiler;
-        }
+        self.compiler = &mut compiler;
 
-        let parser = &mut Parser::new(scanner, compiler, &mut self.objects, &mut self.strings);
+        let parser = &mut Parser::new(scanner, self.compiler, &mut self.objects, &mut self.strings);
 
         let function = parser.compile();
-
-        unsafe {
-            COMPILER_INSTANCE = compiler as *mut Compiler;
-        }
 
         if function.is_null() {
             return InterpretResult::CompileError;

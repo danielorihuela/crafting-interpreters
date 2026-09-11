@@ -3,6 +3,7 @@ use std::ops::{Deref, DerefMut};
 use std::ptr::drop_in_place;
 
 use crate::collections::hashtable::HashTable;
+use crate::compiler::Compiler;
 use crate::memory::alloc::reallocate;
 use crate::memory::array::free_array;
 use crate::types::value::class::{ObjBoundMethod, ObjClass, ObjInstance};
@@ -12,7 +13,7 @@ use crate::types::value::native::ObjNative;
 use crate::types::value::string::ObjString;
 use crate::types::value::upvalue::ObjUpvalue;
 use crate::types::value::{ObjPtrTarget, Value};
-use crate::{COMPILER_INSTANCE, DEBUG_LOG_GC, VM_INSTANCE};
+use crate::{DEBUG_LOG_GC, VM_INSTANCE};
 
 const GC_HEAP_GROW_FACTOR: usize = 2;
 
@@ -202,7 +203,7 @@ fn mark_roots() {
         }
 
         mark_table(&mut vm.globals);
-        mark_compiler_roots();
+        mark_compiler_roots(vm.compiler);
         mark_object(vm.init_string as *mut Obj);
     }
 }
@@ -244,13 +245,11 @@ fn mark_table(table: &mut HashTable) {
     }
 }
 
-fn mark_compiler_roots() {
-    unsafe {
-        let mut curr_compiler = COMPILER_INSTANCE;
-        while !curr_compiler.is_null() {
-            mark_object((*curr_compiler).function as *mut Obj);
-            curr_compiler = (*curr_compiler).enclosing;
-        }
+fn mark_compiler_roots(compiler: *mut Compiler) {
+    let mut curr_compiler = compiler;
+    while !curr_compiler.is_null() {
+        mark_object(unsafe { (*curr_compiler).function } as *mut Obj);
+        curr_compiler = unsafe { (*curr_compiler).enclosing };
     }
 }
 

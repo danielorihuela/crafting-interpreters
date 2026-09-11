@@ -278,6 +278,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[test]
     fn test_bench() {
         let input = include_str!("../../benchmark.lox");

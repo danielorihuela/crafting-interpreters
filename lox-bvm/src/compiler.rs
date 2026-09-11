@@ -1,7 +1,7 @@
 use std::{mem::transmute, slice::from_raw_parts, str::from_utf8_unchecked};
 
 use crate::{
-    AsciiChar, COMPILER_INSTANCE,
+    AsciiChar,
     collections::hashtable::HashTable,
     scanner::Scanner,
     types::{
@@ -194,9 +194,6 @@ impl<'a> Parser<'a> {
             self.previous.length,
         );
         self.compiler = Box::into_raw(Box::new(compiler));
-        unsafe {
-            COMPILER_INSTANCE = self.compiler;
-        }
         let curr_compiler = unsafe { &mut *self.compiler };
 
         self.begin_scope();
@@ -632,9 +629,6 @@ impl<'a> Parser<'a> {
         }
 
         self.compiler = unsafe { &mut *(*self.compiler).enclosing };
-        unsafe {
-            COMPILER_INSTANCE = self.compiler;
-        }
 
         function
     }

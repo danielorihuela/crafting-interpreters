@@ -20,7 +20,6 @@ pub const DEBUG_LOG_GC: bool = false;
 pub use crate::types::value::obj::garbage_collect;
 
 pub static mut VM_INSTANCE: *mut VM = std::ptr::null_mut();
-pub static mut COMPILER_INSTANCE: *mut compiler::Compiler = std::ptr::null_mut();
 
 fn initialize_vm() {
     unsafe {
