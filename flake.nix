@@ -113,6 +113,34 @@
 
           (cd craftinginterpreters/tool; $dart pub cache clean -f)
         '';
+
+        packages.test-lox-custom = pkgs.writeShellScriptBin "run-loxcustom-tests" ''
+          export PATH=${rustNightly}/bin:$PATH
+
+          git=${pkgs.git}/bin/git
+          cargo=${pkgs.cargo}/bin/cargo
+          dart=${dartPkgs.dart}/bin/dart
+
+          $git submodule init
+          $git submodule update
+          (cd lox-custom; $cargo build --release; $cargo test; cargo miri test)
+          (cd craftinginterpreters/tool; $dart pub get > /dev/null)
+
+          cd craftinginterpreters
+          $dart tool/bin/test.dart chap21_global --interpreter ../lox-custom/target/release/lox-custom
+          $dart tool/bin/test.dart chap22_local --interpreter ../lox-custom/target/release/lox-custom
+          $dart tool/bin/test.dart chap23_jumping --interpreter ../lox-custom/target/release/lox-custom
+          $dart tool/bin/test.dart chap24_calls --interpreter ../lox-custom/target/release/lox-custom
+          $dart tool/bin/test.dart chap25_closures --interpreter ../lox-custom/target/release/lox-custom
+          $dart tool/bin/test.dart chap26_garbage --interpreter ../lox-custom/target/release/lox-custom
+          $dart tool/bin/test.dart chap27_classes --interpreter ../lox-custom/target/release/lox-custom
+          $dart tool/bin/test.dart chap28_methods --interpreter ../lox-custom/target/release/lox-custom
+          $dart tool/bin/test.dart chap29_superclasses --interpreter ../lox-custom/target/release/lox-custom
+          $dart tool/bin/test.dart chap30_optimization --interpreter ../lox-custom/target/release/lox-custom
+          cd ..
+
+          (cd craftinginterpreters/tool; $dart pub cache clean -f)
+        '';
       }
     );
 }
