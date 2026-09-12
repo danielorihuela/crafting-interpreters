@@ -73,7 +73,7 @@ impl Display for ObjPtr {
                 unsafe { (*bound_method).to_string() }
             }
         };
-        return write!(f, "{}", data);
+        write!(f, "{}", data)
     }
 }
 
@@ -199,7 +199,7 @@ fn mark_roots() {
         let mut next_upvalue = vm.open_upvalues;
         while !next_upvalue.is_null() {
             mark_object(next_upvalue as *mut Obj);
-            next_upvalue = unsafe { (*next_upvalue).next };
+            next_upvalue = (*next_upvalue).next;
         }
 
         mark_table(&mut vm.globals);
@@ -314,10 +314,10 @@ fn table_remove_white() {
         let vm = &mut *VM_INSTANCE;
         let mut i = 0;
         while i < vm.strings.capacity {
-            let entry = unsafe { vm.strings.entries.add(i) };
-            let key = unsafe { (*entry).key };
+            let entry = vm.strings.entries.add(i);
+            let key = (*entry).key;
             let key_obj = key as *mut Obj;
-            if !key.is_null() && !unsafe { (*key_obj).is_marked } {
+            if !key.is_null() && !(*key_obj).is_marked {
                 vm.strings.delete(key);
             }
             i += 1;
@@ -331,19 +331,19 @@ fn sweep() {
         let mut previous = std::ptr::null_mut();
         let mut object = vm.objects;
         while !object.is_null() {
-            if unsafe { (*object).is_marked } {
-                unsafe { (*object).is_marked = false };
+            if (*object).is_marked {
+                (*object).is_marked = false;
                 previous = object;
-                object = unsafe { (*object).next.0 };
+                object = (*object).next.0;
             } else {
                 let unreached = object;
-                object = unsafe { (*object).next.0 };
+                object = (*object).next.0;
                 if !previous.is_null() {
-                    unsafe { (*previous).next = object.into() };
+                    (*previous).next = object.into();
                 } else {
                     vm.objects = object;
                 }
-                unsafe { free_object(unreached) };
+                free_object(unreached);
             }
         }
     }

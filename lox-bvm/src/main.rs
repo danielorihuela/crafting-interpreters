@@ -1,7 +1,7 @@
 use std::{fs, io::Write};
 
 use crate::memory::alloc::take_bootstrap_bytes_allocated;
-use crate::{types::AsciiChar, vm::VM};
+use crate::vm::VM;
 
 mod collections;
 mod compiler;

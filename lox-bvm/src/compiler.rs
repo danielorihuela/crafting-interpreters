@@ -1,7 +1,6 @@
-use std::{mem::transmute, slice::from_raw_parts, str::from_utf8_unchecked};
+use std::mem::transmute;
 
 use crate::{
-    AsciiChar,
     collections::hashtable::HashTable,
     scanner::Scanner,
     types::{
@@ -613,18 +612,18 @@ impl<'src> Parser<'src> {
         function
     }
 
-    fn number(&mut self, can_assign: bool) {
+    fn number(&mut self, _can_assign: bool) {
         let value = self.previous.lexeme;
         let value: f64 = value.parse().unwrap();
         self.emit_constant(Value::from(value));
     }
 
-    fn grouping(&mut self, can_assign: bool) {
+    fn grouping(&mut self, _can_assign: bool) {
         self.expression();
         self.consume(TokenType::RightParen, "Expect ')' after expression.");
     }
 
-    fn unary(&mut self, can_assign: bool) {
+    fn unary(&mut self, _can_assign: bool) {
         let operator_type = self.previous.ttype.clone();
 
         self.parse_precedence(Precedence::Unary);
@@ -657,7 +656,7 @@ impl<'src> Parser<'src> {
         }
     }
 
-    fn literal(&mut self, can_assign: bool) {
+    fn literal(&mut self, _can_assign: bool) {
         match self.previous.ttype.clone() {
             TokenType::False => self.emit_byte(OpCode::False),
             TokenType::True => self.emit_byte(OpCode::True),
@@ -682,7 +681,7 @@ impl<'src> Parser<'src> {
         }
     }
 
-    fn string(&mut self, can_assign: bool) {
+    fn string(&mut self, _can_assign: bool) {
         let string = ObjString::new(
             &self.previous.lexeme[1..self.previous.lexeme.len() - 1],
             self.objects,
@@ -696,7 +695,7 @@ impl<'src> Parser<'src> {
         self.named_variable(can_assign);
     }
 
-    fn this(&mut self, can_assign: bool) {
+    fn this(&mut self, _can_assign: bool) {
         if self.current_class.is_null() {
             self.error("Can't use 'this' outside of a class.");
             return;
@@ -704,7 +703,7 @@ impl<'src> Parser<'src> {
         self.variable(false);
     }
 
-    fn super_(&mut self, can_assign: bool) {
+    fn super_(&mut self, _can_assign: bool) {
         if self.current_class.is_null() {
             self.error("Can't use 'super' outside of a class.");
         } else if unsafe { !(*self.current_class).has_superclass } {
@@ -728,14 +727,14 @@ impl<'src> Parser<'src> {
     }
 
     fn named_variable_with(&mut self, name: &Token<'src>, can_assign: bool) {
-        let mut set_opcode = OpCode::SetGlobal;
-        let mut get_opcode = OpCode::GetGlobal;
-        let mut arg = resolve_local(self, self.compiler, &name);
+        let set_opcode;
+        let get_opcode;
+        let mut arg = resolve_local(self, self.compiler, name);
         if arg != -1 {
             set_opcode = OpCode::SetLocal;
             get_opcode = OpCode::GetLocal;
         } else {
-            arg = self.resolve_upvalue(self.compiler, &name);
+            arg = self.resolve_upvalue(self.compiler, name);
             if arg != -1 {
                 set_opcode = OpCode::SetUpvalue;
                 get_opcode = OpCode::GetUpvalue;
@@ -756,8 +755,8 @@ impl<'src> Parser<'src> {
     }
 
     fn named_variable(&mut self, can_assign: bool) {
-        let mut set_opcode = OpCode::SetGlobal;
-        let mut get_opcode = OpCode::GetGlobal;
+        let set_opcode;
+        let get_opcode;
         let name = self.previous.clone();
         let mut arg = resolve_local(self, self.compiler, &name);
         if arg != -1 {
@@ -815,14 +814,14 @@ impl<'src> Parser<'src> {
         -1
     }
 
-    fn and(&mut self, can_assign: bool) {
+    fn and(&mut self, _can_assign: bool) {
         let end_jump = self.emit_jump(OpCode::JumpIfFalse);
         self.emit_byte(OpCode::Pop);
         self.parse_precedence(Precedence::And);
         self.patch_jump(end_jump);
     }
 
-    fn or(&mut self, can_assign: bool) {
+    fn or(&mut self, _can_assign: bool) {
         let else_jump = self.emit_jump(OpCode::JumpIfFalse);
         let end_jump = self.emit_jump(OpCode::Jump);
 
@@ -833,7 +832,7 @@ impl<'src> Parser<'src> {
         self.patch_jump(end_jump);
     }
 
-    fn call(&mut self, can_assign: bool) {
+    fn call(&mut self, _can_assign: bool) {
         let arg_count = self.argument_list();
         self.emit_bytes(OpCode::Call, arg_count);
     }
@@ -859,7 +858,7 @@ impl<'src> Parser<'src> {
         arg_count
     }
 
-    fn get_rule(&self, ttype: TokenType, can_assign: bool) -> ParseRule {
+    fn get_rule(&self, ttype: TokenType, _can_assign: bool) -> ParseRule {
         match ttype {
             TokenType::LeftParen => ParseRule {
                 prefix: Some(|parser, can_assign| parser.grouping(can_assign)),

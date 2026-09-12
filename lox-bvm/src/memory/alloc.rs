@@ -51,15 +51,13 @@ fn reallocate_inner<T>(
 
     adjust_bytes_allocated(old_size, new_size);
 
-    if gc_enabled {
-        if new_capacity > old_capacity && vm_is_ready() {
-            if DEBUG_STRESS_GC {
-                garbage_collect();
-            }
+    if gc_enabled && new_capacity > old_capacity && vm_is_ready() {
+        if DEBUG_STRESS_GC {
+            garbage_collect();
+        }
 
-            if unsafe { (*VM_INSTANCE).bytes_allocated > (*VM_INSTANCE).next_gc } {
-                garbage_collect();
-            }
+        if unsafe { (*VM_INSTANCE).bytes_allocated > (*VM_INSTANCE).next_gc } {
+            garbage_collect();
         }
     }
 

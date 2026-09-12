@@ -245,10 +245,10 @@ mod value_nan {
             } else if self.is_number() {
                 return write!(f, "{}", self.as_number());
             } else if self.is_obj() {
-                return write!(f, "{}", ObjPtr::from(self.as_obj()).to_string());
+                return write!(f, "{}", ObjPtr::from(self.as_obj()));
             }
 
-            return write!(f, "<unknown>");
+            write!(f, "<unknown>")
         }
     }
 

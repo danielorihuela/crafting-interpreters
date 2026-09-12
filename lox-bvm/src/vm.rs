@@ -399,16 +399,14 @@ impl VM {
                     if let Some(v) = value {
                         self.stack.pop();
                         self.stack.push(unsafe { (*v).clone() });
-                    } else {
-                        if let Err(message) = bind_method(
-                            &mut self.objects,
-                            &mut self.stack,
-                            unsafe { (*instance).class },
-                            name,
-                        ) {
-                            self.runtime_error(&message);
-                            return InterpretResult::RuntimeError;
-                        }
+                    } else if let Err(message) = bind_method(
+                        &mut self.objects,
+                        &mut self.stack,
+                        unsafe { (*instance).class },
+                        name,
+                    ) {
+                        self.runtime_error(&message);
+                        return InterpretResult::RuntimeError;
                     }
                 }
                 OpCode::SetProperty => {
