@@ -1,19 +1,21 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::{
+    DEBUG_LOG_GC,
     collections::{dynarray::DynArray, hashtable::HashTable, stack::Stack},
     compiler::{Compiler, FunctionType, Parser},
+    memory::gc::{GcCollector, GcContext},
     scanner::Scanner,
-    types::value::string::copy_string,
     types::{
         opcode::OpCode,
         value::{
             Value,
             class::{ObjBoundMethod, ObjClass, ObjInstance},
             closure::ObjClosure,
+            function::ObjFunction,
             native::{NativeFn, ObjNative},
-            obj::{Obj, free_object},
-            string::ObjString,
+            obj::{Obj, ObjType, free_object},
+            string::{ObjString, copy_string},
             upvalue::ObjUpvalue,
         },
     },
@@ -72,7 +74,7 @@ impl VM {
             output: Vec::new(),
         };
 
-        vm.init_string = copy_string("init", &mut vm.objects, &mut vm.strings);
+        vm.init_string = copy_string("init", &mut vm.objects, &mut vm.strings, &mut vm);
 
         vm.define_native("clock", clock_native);
 
@@ -87,11 +89,19 @@ impl VM {
             &mut self.strings,
             std::ptr::null_mut(),
             "",
+            self,
         );
 
         self.compiler = &mut compiler;
 
-        let parser = &mut Parser::new(scanner, self.compiler, &mut self.objects, &mut self.strings);
+        let parser = &mut Parser::new(
+            scanner,
+            self.compiler,
+            &mut self.objects,
+            &mut self.strings,
+            &mut self.stack,
+            self,
+        );
 
         let function = parser.compile();
 
@@ -101,7 +111,7 @@ impl VM {
 
         self.stack.push(Value::from(function));
 
-        let closure = ObjClosure::new(&mut self.objects, function);
+        let closure = ObjClosure::new(&mut self.objects, function, self);
         self.stack.pop();
         self.stack.push(Value::from(closure));
 
@@ -110,13 +120,14 @@ impl VM {
         self.run()
     }
 
+    #[allow(unused_unsafe)]
     fn run(&mut self) -> InterpretResult {
         #[cfg(debug_assertions)]
         {
             println!("\n=== Running bytecode ===");
         }
 
-        let mut frame = &mut self.frames[self.frame_count as usize - 1];
+        let mut frame: *mut CallFrame = &mut self.frames[self.frame_count as usize - 1];
 
         loop {
             #[cfg(debug_assertions)]
@@ -126,384 +137,399 @@ impl VM {
 
                 use crate::types::chunk::debug::disassemble_instruction;
                 let offset = unsafe {
-                    frame
+                    (*frame)
                         .ip
-                        .offset_from((*(*frame.closure).function).chunk.code.data)
+                        .offset_from((*(*(*frame).closure).function).chunk.code.data)
                 } as usize;
-                let _ =
-                    disassemble_instruction(unsafe { &(*(*frame.closure).function).chunk }, offset);
+                let _ = disassemble_instruction(
+                    unsafe { &(*(*(*frame).closure).function).chunk },
+                    offset,
+                );
             }
 
-            let instruction = OpCode::from(unsafe { *frame.ip });
-            frame.ip = unsafe { frame.ip.add(1) };
+            unsafe {
+                let instruction = OpCode::from(*(*frame).ip);
+                (*frame).ip = (*frame).ip.add(1);
 
-            match instruction {
-                OpCode::Constant => {
-                    let position = unsafe { *frame.ip } as usize;
-                    frame.ip = unsafe { frame.ip.add(1) };
+                match instruction {
+                    OpCode::Constant => {
+                        let position = unsafe { *(*frame).ip } as usize;
+                        (*frame).ip = unsafe { (*frame).ip.add(1) };
 
-                    let value = &unsafe { &(*(*frame.closure).function).chunk }.values[position];
-                    self.stack.push(value.clone());
-                }
-                OpCode::Add => {
-                    let b = self.stack.peek(0).clone();
-                    let a = self.stack.peek(1).clone();
-                    let result = if a.is_string() && b.is_string() {
-                        Ok(Value::from(unsafe {
-                            (*a.as_string()).add(
-                                b.as_string(),
-                                &mut self.objects,
-                                &mut self.strings,
-                            )
-                        }))
-                    } else {
-                        a + b
-                    };
-                    self.stack.pop();
-                    self.stack.pop();
-                    match result {
-                        Ok(v) => self.stack.push(v),
-                        Err(e) => {
-                            self.runtime_error(&e.to_string());
-                            return InterpretResult::RuntimeError;
-                        }
+                        let value =
+                            &unsafe { &(*(*(*frame).closure).function).chunk }.values[position];
+                        self.stack.push(value.clone());
                     }
-                }
-                OpCode::Subtract
-                | OpCode::Multiply
-                | OpCode::Divide
-                | OpCode::Greater
-                | OpCode::Less => {
-                    if let Some(op) = instruction.maybe_binary_op() {
-                        let b = self.stack.pop();
-                        let a = self.stack.pop();
-                        match op(a, b) {
-                            Ok(result) => self.stack.push(result),
+                    OpCode::Add => {
+                        let b = self.stack.peek(0).clone();
+                        let a = self.stack.peek(1).clone();
+                        let result = if a.is_string() && b.is_string() {
+                            Ok(Value::from(unsafe {
+                                (*a.as_string()).add(
+                                    b.as_string(),
+                                    &mut self.objects,
+                                    &mut self.strings,
+                                    self,
+                                )
+                            }))
+                        } else {
+                            a + b
+                        };
+                        self.stack.pop();
+                        self.stack.pop();
+                        match result {
+                            Ok(v) => self.stack.push(v),
                             Err(e) => {
                                 self.runtime_error(&e.to_string());
                                 return InterpretResult::RuntimeError;
                             }
                         }
-                    } else {
-                        panic!("Unsupported binary operation");
                     }
-                }
-                OpCode::Negate => {
-                    if !self.stack.peek(0).is_number() {
-                        self.runtime_error("Operand must be a number.");
-                        return InterpretResult::RuntimeError;
+                    OpCode::Subtract
+                    | OpCode::Multiply
+                    | OpCode::Divide
+                    | OpCode::Greater
+                    | OpCode::Less => {
+                        if let Some(op) = instruction.maybe_binary_op() {
+                            let b = self.stack.pop();
+                            let a = self.stack.pop();
+                            match op(a, b) {
+                                Ok(result) => self.stack.push(result),
+                                Err(e) => {
+                                    self.runtime_error(&e.to_string());
+                                    return InterpretResult::RuntimeError;
+                                }
+                            }
+                        } else {
+                            panic!("Unsupported binary operation");
+                        }
                     }
-                    let value = self.stack.pop();
-                    self.stack.push(Value::from(-value.as_number()));
-                }
-                OpCode::Not => {
-                    let value = self.stack.pop();
-                    self.stack.push(Value::from(value.is_falsey()));
-                }
-                OpCode::Equal => {
-                    let b = self.stack.pop();
-                    let a = self.stack.pop();
-                    self.stack.push(Value::from(a == b));
-                }
-                OpCode::False => self.stack.push(Value::from(false)),
-                OpCode::True => self.stack.push(Value::from(true)),
-                OpCode::Nil => self.stack.push(Value::from(())),
-                OpCode::Return => {
-                    let result = self.stack.pop();
-                    close_upvalues(&mut self.open_upvalues, frame.slots);
-                    self.frame_count -= 1;
-                    if self.frame_count == 0 {
+                    OpCode::Negate => {
+                        if !self.stack.peek(0).is_number() {
+                            self.runtime_error("Operand must be a number.");
+                            return InterpretResult::RuntimeError;
+                        }
+                        let value = self.stack.pop();
+                        self.stack.push(Value::from(-value.as_number()));
+                    }
+                    OpCode::Not => {
+                        let value = self.stack.pop();
+                        self.stack.push(Value::from(value.is_falsey()));
+                    }
+                    OpCode::Equal => {
+                        let b = self.stack.pop();
+                        let a = self.stack.pop();
+                        self.stack.push(Value::from(a == b));
+                    }
+                    OpCode::False => self.stack.push(Value::from(false)),
+                    OpCode::True => self.stack.push(Value::from(true)),
+                    OpCode::Nil => self.stack.push(Value::from(())),
+                    OpCode::Return => {
+                        let result = self.stack.pop();
+                        close_upvalues(&mut self.open_upvalues, (*frame).slots);
+                        self.frame_count -= 1;
+                        if self.frame_count == 0 {
+                            self.stack.pop();
+                            return InterpretResult::Ok;
+                        }
+
+                        unsafe { self.stack.truncate_to_ptr((*frame).slots) };
+                        self.stack.push(result);
+                        frame = &mut self.frames[self.frame_count as usize - 1];
+                    }
+                    OpCode::Print => {
+                        let value = self.stack.pop();
+                        #[cfg(test)]
+                        self.output.push(value.to_string());
+                        println!("{}", value);
+                    }
+                    OpCode::Pop => {
                         self.stack.pop();
-                        return InterpretResult::Ok;
                     }
+                    OpCode::DefineGlobal => {
+                        let position = unsafe { *(*frame).ip } as usize;
+                        (*frame).ip = unsafe { (*frame).ip.add(1) };
 
-                    unsafe { self.stack.truncate_to_ptr(frame.slots) };
-                    self.stack.push(result);
-                    frame = &mut self.frames[self.frame_count as usize - 1];
-                }
-                OpCode::Print => {
-                    let value = self.stack.pop();
-                    #[cfg(test)]
-                    self.output.push(value.to_string());
-                    println!("{}", value);
-                }
-                OpCode::Pop => {
-                    self.stack.pop();
-                }
-                OpCode::DefineGlobal => {
-                    let position = unsafe { *frame.ip } as usize;
-                    frame.ip = unsafe { frame.ip.add(1) };
+                        let name = unsafe { &(*(*(*frame).closure).function).chunk }.values
+                            [position]
+                            .as_string();
+                        self.globals_set(name, self.stack.peek(0).clone());
+                        let _ = self.stack.pop();
+                    }
+                    OpCode::GetGlobal => {
+                        let position = unsafe { *(*frame).ip } as usize;
+                        (*frame).ip = unsafe { (*frame).ip.add(1) };
 
-                    let name =
-                        unsafe { &(*(*frame.closure).function).chunk }.values[position].as_string();
-                    self.globals.set(name, self.stack.peek(0).clone());
-                    let _ = self.stack.pop();
-                }
-                OpCode::GetGlobal => {
-                    let position = unsafe { *frame.ip } as usize;
-                    frame.ip = unsafe { frame.ip.add(1) };
+                        let name = unsafe { &(*(*(*frame).closure).function).chunk }.values
+                            [position]
+                            .as_string();
+                        match self.globals.get(name) {
+                            Some(value) => self.stack.push(unsafe { (*value).clone() }),
+                            None => {
+                                self.runtime_error(&format!(
+                                    "Undefined variable '{}'.",
+                                    Value::from(name)
+                                ));
+                                return InterpretResult::RuntimeError;
+                            }
+                        }
+                    }
+                    OpCode::SetGlobal => {
+                        let position = unsafe { *(*frame).ip } as usize;
+                        (*frame).ip = unsafe { (*frame).ip.add(1) };
 
-                    let name =
-                        unsafe { &(*(*frame.closure).function).chunk }.values[position].as_string();
-                    match self.globals.get(name) {
-                        Some(value) => self.stack.push(unsafe { (*value).clone() }),
-                        None => {
+                        let name = unsafe { &(*(*(*frame).closure).function).chunk }.values
+                            [position]
+                            .as_string();
+                        if self.globals_set(name, self.stack.peek(0).clone()) {
+                            self.globals.delete(name);
                             self.runtime_error(&format!(
                                 "Undefined variable '{}'.",
                                 Value::from(name)
                             ));
                             return InterpretResult::RuntimeError;
+                        };
+                    }
+                    OpCode::GetLocal => {
+                        let slot = unsafe { *(*frame).ip } as usize;
+                        (*frame).ip = unsafe { (*frame).ip.add(1) };
+
+                        self.stack
+                            .push(unsafe { (*(*frame).slots.add(slot)).clone() });
+                    }
+                    OpCode::SetLocal => {
+                        let slot = unsafe { *(*frame).ip } as usize;
+                        (*frame).ip = unsafe { (*frame).ip.add(1) };
+
+                        unsafe { *(*frame).slots.add(slot) = self.stack.peek(0).clone() };
+                    }
+                    OpCode::JumpIfFalse => {
+                        let offset_0 = unsafe { *(*frame).ip } as usize;
+                        let offset_1 = unsafe { *(*frame).ip.add(1) } as usize;
+                        (*frame).ip = unsafe { (*frame).ip.add(2) };
+
+                        let offset = (offset_0 << 8) | offset_1;
+
+                        if self.stack.peek(0).is_falsey() {
+                            (*frame).ip = unsafe { (*frame).ip.add(offset) };
                         }
                     }
-                }
-                OpCode::SetGlobal => {
-                    let position = unsafe { *frame.ip } as usize;
-                    frame.ip = unsafe { frame.ip.add(1) };
+                    OpCode::Jump => {
+                        let offset_0 = unsafe { *(*frame).ip } as usize;
+                        let offset_1 = unsafe { *(*frame).ip.add(1) } as usize;
+                        (*frame).ip = unsafe { (*frame).ip.add(2) };
 
-                    let name =
-                        unsafe { &(*(*frame.closure).function).chunk }.values[position].as_string();
-                    if self.globals.set(name, self.stack.peek(0).clone()) {
-                        self.globals.delete(name);
-                        self.runtime_error(&format!("Undefined variable '{}'.", Value::from(name)));
-                        return InterpretResult::RuntimeError;
-                    };
-                }
-                OpCode::GetLocal => {
-                    let slot = unsafe { *frame.ip } as usize;
-                    frame.ip = unsafe { frame.ip.add(1) };
+                        let offset = (offset_0 << 8) | offset_1;
 
-                    self.stack.push(unsafe { (*frame.slots.add(slot)).clone() });
-                }
-                OpCode::SetLocal => {
-                    let slot = unsafe { *frame.ip } as usize;
-                    frame.ip = unsafe { frame.ip.add(1) };
-
-                    unsafe { *frame.slots.add(slot) = self.stack.peek(0).clone() };
-                }
-                OpCode::JumpIfFalse => {
-                    let offset_0 = unsafe { *frame.ip } as usize;
-                    let offset_1 = unsafe { *frame.ip.add(1) } as usize;
-                    frame.ip = unsafe { frame.ip.add(2) };
-
-                    let offset = (offset_0 << 8) | offset_1;
-
-                    if self.stack.peek(0).is_falsey() {
-                        frame.ip = unsafe { frame.ip.add(offset) };
+                        (*frame).ip = unsafe { (*frame).ip.add(offset) };
                     }
-                }
-                OpCode::Jump => {
-                    let offset_0 = unsafe { *frame.ip } as usize;
-                    let offset_1 = unsafe { *frame.ip.add(1) } as usize;
-                    frame.ip = unsafe { frame.ip.add(2) };
+                    OpCode::Loop => {
+                        let offset_0 = unsafe { *(*frame).ip } as usize;
+                        let offset_1 = unsafe { *(*frame).ip.add(1) } as usize;
+                        (*frame).ip = unsafe { (*frame).ip.add(2) };
 
-                    let offset = (offset_0 << 8) | offset_1;
+                        let offset = (offset_0 << 8) | offset_1;
 
-                    frame.ip = unsafe { frame.ip.add(offset) };
-                }
-                OpCode::Loop => {
-                    let offset_0 = unsafe { *frame.ip } as usize;
-                    let offset_1 = unsafe { *frame.ip.add(1) } as usize;
-                    frame.ip = unsafe { frame.ip.add(2) };
-
-                    let offset = (offset_0 << 8) | offset_1;
-
-                    frame.ip = unsafe { frame.ip.sub(offset) };
-                }
-                OpCode::Call => {
-                    let arg_count = unsafe { *frame.ip } as usize;
-                    frame.ip = unsafe { frame.ip.add(1) };
-
-                    let callee = self.stack.peek(arg_count).clone();
-                    if !self.call_value(callee, arg_count) {
-                        return InterpretResult::RuntimeError;
+                        (*frame).ip = unsafe { (*frame).ip.sub(offset) };
                     }
-                    frame = &mut self.frames[self.frame_count as usize - 1];
-                }
-                OpCode::Closure => {
-                    let position = unsafe { *frame.ip } as usize;
-                    frame.ip = unsafe { frame.ip.add(1) };
+                    OpCode::Call => {
+                        let arg_count = unsafe { *(*frame).ip } as usize;
+                        (*frame).ip = unsafe { (*frame).ip.add(1) };
 
-                    let function = unsafe { &(*(*frame.closure).function).chunk }.values[position]
-                        .as_function();
-                    let closure = ObjClosure::new(&mut self.objects, function);
-                    self.stack.push(Value::from(closure));
+                        let callee = self.stack.peek(arg_count).clone();
+                        if !self.call_value(callee, arg_count) {
+                            return InterpretResult::RuntimeError;
+                        }
+                        frame = &mut self.frames[self.frame_count as usize - 1];
+                    }
+                    OpCode::Closure => {
+                        let position = unsafe { *(*frame).ip } as usize;
+                        (*frame).ip = unsafe { (*frame).ip.add(1) };
 
-                    for i in 0..unsafe { (*function).upvalue_count } {
-                        let is_local = unsafe { *frame.ip } != 0;
-                        frame.ip = unsafe { frame.ip.add(1) };
+                        let function = unsafe { &(*(*(*frame).closure).function).chunk }.values
+                            [position]
+                            .as_function();
+                        let closure = ObjClosure::new(&mut self.objects, function, self);
+                        self.stack.push(Value::from(closure));
 
-                        let index = unsafe { *frame.ip } as usize;
-                        frame.ip = unsafe { frame.ip.add(1) };
+                        for i in 0..unsafe { (*function).upvalue_count } {
+                            let is_local = unsafe { *(*frame).ip } != 0;
+                            (*frame).ip = unsafe { (*frame).ip.add(1) };
 
-                        if is_local {
-                            unsafe {
-                                (*closure).upvalues.add(i).write(capture_upvalue(
-                                    &mut self.open_upvalues,
-                                    &mut self.objects,
-                                    frame.slots.add(index),
-                                ));
-                            }
-                        } else {
-                            unsafe {
-                                (*closure)
-                                    .upvalues
-                                    .add(i)
-                                    .write(*(*frame.closure).upvalues.add(index));
+                            let index = unsafe { *(*frame).ip } as usize;
+                            (*frame).ip = unsafe { (*frame).ip.add(1) };
+
+                            if is_local {
+                                unsafe {
+                                    (*closure)
+                                        .upvalues
+                                        .add(i)
+                                        .write(capture_upvalue((*frame).slots.add(index), self));
+                                }
+                            } else {
+                                unsafe {
+                                    (*closure)
+                                        .upvalues
+                                        .add(i)
+                                        .write(*(*(*frame).closure).upvalues.add(index));
+                                }
                             }
                         }
                     }
-                }
-                OpCode::GetUpvalue => {
-                    let slot = unsafe { *frame.ip } as usize;
-                    frame.ip = unsafe { frame.ip.add(1) };
+                    OpCode::GetUpvalue => {
+                        let slot = unsafe { *(*frame).ip } as usize;
+                        (*frame).ip = unsafe { (*frame).ip.add(1) };
 
-                    let upvalue = unsafe { (*(*(*frame.closure).upvalues.add(slot))).location };
-                    self.stack.push(unsafe { (*upvalue).clone() });
-                }
-                OpCode::SetUpvalue => {
-                    let slot = unsafe { *frame.ip } as usize;
-                    frame.ip = unsafe { frame.ip.add(1) };
-
-                    let upvalue = unsafe { (*(*(*frame.closure).upvalues.add(slot))).location };
-                    unsafe { *upvalue = self.stack.peek(0).clone() };
-                }
-                OpCode::CloseUpvalue => {
-                    let last = unsafe { self.stack.as_mut_ptr().add(self.stack.len() - 1) };
-                    close_upvalues(&mut self.open_upvalues, last);
-                    self.stack.pop();
-                }
-                OpCode::Class => {
-                    let position = unsafe { *frame.ip } as usize;
-                    frame.ip = unsafe { frame.ip.add(1) };
-
-                    let name =
-                        unsafe { &(*(*frame.closure).function).chunk }.values[position].as_string();
-                    let class = ObjClass::new(&mut self.objects, name);
-                    self.stack.push(Value::from(class));
-                }
-                OpCode::GetProperty => {
-                    if !self.stack.peek(0).is_instance() {
-                        self.runtime_error("Only instances have properties.");
-                        return InterpretResult::RuntimeError;
+                        let upvalue =
+                            unsafe { (*(*(*(*frame).closure).upvalues.add(slot))).location };
+                        self.stack.push(unsafe { (*upvalue).clone() });
                     }
+                    OpCode::SetUpvalue => {
+                        let slot = unsafe { *(*frame).ip } as usize;
+                        (*frame).ip = unsafe { (*frame).ip.add(1) };
 
-                    let instance = self.stack.peek(0).as_instance();
-
-                    let name_position = unsafe { *frame.ip } as usize;
-                    frame.ip = unsafe { frame.ip.add(1) };
-
-                    let name = unsafe { &(*(*frame.closure).function).chunk }.values[name_position]
-                        .as_string();
-
-                    let value = unsafe { (*instance).fields.get(name) };
-                    if let Some(v) = value {
+                        let upvalue =
+                            unsafe { (*(*(*(*frame).closure).upvalues.add(slot))).location };
+                        unsafe { *upvalue = self.stack.peek(0).clone() };
+                    }
+                    OpCode::CloseUpvalue => {
+                        let last = unsafe { self.stack.as_mut_ptr().add(self.stack.len() - 1) };
+                        close_upvalues(&mut self.open_upvalues, last);
                         self.stack.pop();
-                        self.stack.push(unsafe { (*v).clone() });
-                    } else if let Err(message) = bind_method(
-                        &mut self.objects,
-                        &mut self.stack,
-                        unsafe { (*instance).class },
-                        name,
-                    ) {
-                        self.runtime_error(&message);
-                        return InterpretResult::RuntimeError;
                     }
-                }
-                OpCode::SetProperty => {
-                    if !self.stack.peek(1).is_instance() {
-                        self.runtime_error("Only instances have fields.");
-                        return InterpretResult::RuntimeError;
+                    OpCode::Class => {
+                        let position = unsafe { *(*frame).ip } as usize;
+                        (*frame).ip = unsafe { (*frame).ip.add(1) };
+
+                        let name = unsafe { &(*(*(*frame).closure).function).chunk }.values
+                            [position]
+                            .as_string();
+                        let class = ObjClass::new(&mut self.objects, name, self);
+                        self.stack.push(Value::from(class));
                     }
+                    OpCode::GetProperty => {
+                        if !self.stack.peek(0).is_instance() {
+                            self.runtime_error("Only instances have properties.");
+                            return InterpretResult::RuntimeError;
+                        }
 
-                    let instance = self.stack.peek(1).as_instance();
+                        let instance = self.stack.peek(0).as_instance();
 
-                    let name_position = unsafe { *frame.ip } as usize;
-                    frame.ip = unsafe { frame.ip.add(1) };
+                        let name_position = unsafe { *(*frame).ip } as usize;
+                        (*frame).ip = unsafe { (*frame).ip.add(1) };
 
-                    let name = unsafe { &(*(*frame.closure).function).chunk }.values[name_position]
-                        .as_string();
+                        let name = unsafe { &(*(*(*frame).closure).function).chunk }.values
+                            [name_position]
+                            .as_string();
 
-                    let value = self.stack.peek(0).clone();
-                    unsafe { (*instance).fields.set(name, value.clone()) };
-                    self.stack.pop();
-                    self.stack.pop();
-                    self.stack.push(value);
-                }
-                OpCode::Method => {
-                    let name_position = unsafe { *frame.ip } as usize;
-                    frame.ip = unsafe { frame.ip.add(1) };
-
-                    let name = unsafe { &(*(*frame.closure).function).chunk }.values[name_position]
-                        .as_string();
-
-                    let class = self.stack.peek(1).as_class();
-                    let method = self.stack.peek(0).clone();
-                    unsafe { (*class).methods.set(name, method) };
-                    self.stack.pop();
-                }
-                OpCode::Invoke => {
-                    let method_position = unsafe { *frame.ip } as usize;
-                    frame.ip = unsafe { frame.ip.add(1) };
-                    let method = unsafe { &(*(*frame.closure).function).chunk }.values
-                        [method_position]
-                        .as_string();
-
-                    let arg_count = unsafe { *frame.ip } as usize;
-                    frame.ip = unsafe { frame.ip.add(1) };
-
-                    if !self.invoke(method, arg_count) {
-                        return InterpretResult::RuntimeError;
+                        let value = unsafe { (*instance).fields.get(name) };
+                        if let Some(v) = value {
+                            self.stack.pop();
+                            self.stack.push(unsafe { (*v).clone() });
+                        } else if let Err(message) = bind_method(self, (*instance).class, name) {
+                            self.runtime_error(&message);
+                            return InterpretResult::RuntimeError;
+                        }
                     }
+                    OpCode::SetProperty => {
+                        if !self.stack.peek(1).is_instance() {
+                            self.runtime_error("Only instances have fields.");
+                            return InterpretResult::RuntimeError;
+                        }
 
-                    frame = &mut self.frames[self.frame_count as usize - 1];
-                }
-                OpCode::Inherit => {
-                    let superclass = self.stack.peek(1).clone();
-                    if !superclass.is_class() {
-                        self.runtime_error("Superclass must be a class.");
-                        return InterpretResult::RuntimeError;
+                        let instance = self.stack.peek(1).as_instance();
+
+                        let name_position = unsafe { *(*frame).ip } as usize;
+                        (*frame).ip = unsafe { (*frame).ip.add(1) };
+
+                        let name = unsafe { &(*(*(*frame).closure).function).chunk }.values
+                            [name_position]
+                            .as_string();
+
+                        let value = self.stack.peek(0).clone();
+                        unsafe { (*instance).fields.set(name, value.clone(), self) };
+                        self.stack.pop();
+                        self.stack.pop();
+                        self.stack.push(value);
                     }
+                    OpCode::Method => {
+                        let name_position = unsafe { *(*frame).ip } as usize;
+                        (*frame).ip = unsafe { (*frame).ip.add(1) };
 
-                    let subclass = self.stack.peek(0).as_class();
-                    unsafe {
-                        (*subclass)
-                            .methods
-                            .add_all(&(*superclass.as_class()).methods);
-                    };
-                    self.stack.pop();
-                }
-                OpCode::GetSuper => {
-                    let name_position = unsafe { *frame.ip } as usize;
-                    frame.ip = unsafe { frame.ip.add(1) };
+                        let name = unsafe { &(*(*(*frame).closure).function).chunk }.values
+                            [name_position]
+                            .as_string();
 
-                    let name = unsafe { &(*(*frame.closure).function).chunk }.values[name_position]
-                        .as_string();
-
-                    let superclass = self.stack.pop().as_class();
-
-                    if bind_method(&mut self.objects, &mut self.stack, superclass, name).is_err() {
-                        return InterpretResult::RuntimeError;
+                        let class = self.stack.peek(1).as_class();
+                        let method = self.stack.peek(0).clone();
+                        unsafe { (*class).methods.set(name, method, self) };
+                        self.stack.pop();
                     }
-                }
-                OpCode::SuperInvoke => {
-                    let method_position = unsafe { *frame.ip } as usize;
-                    frame.ip = unsafe { frame.ip.add(1) };
-                    let method = unsafe { &(*(*frame.closure).function).chunk }.values
-                        [method_position]
-                        .as_string();
+                    OpCode::Invoke => {
+                        let method_position = unsafe { *(*frame).ip } as usize;
+                        (*frame).ip = unsafe { (*frame).ip.add(1) };
+                        let method = unsafe { &(*(*(*frame).closure).function).chunk }.values
+                            [method_position]
+                            .as_string();
 
-                    let arg_count = unsafe { *frame.ip } as usize;
-                    frame.ip = unsafe { frame.ip.add(1) };
+                        let arg_count = unsafe { *(*frame).ip } as usize;
+                        (*frame).ip = unsafe { (*frame).ip.add(1) };
 
-                    let superclass = self.stack.pop().as_class();
+                        if !self.invoke(method, arg_count) {
+                            return InterpretResult::RuntimeError;
+                        }
 
-                    if !self.invoke_from_class(superclass, method, arg_count) {
-                        return InterpretResult::RuntimeError;
+                        frame = &mut self.frames[self.frame_count as usize - 1];
                     }
+                    OpCode::Inherit => {
+                        let superclass = self.stack.peek(1).clone();
+                        if !superclass.is_class() {
+                            self.runtime_error("Superclass must be a class.");
+                            return InterpretResult::RuntimeError;
+                        }
 
-                    frame = &mut self.frames[self.frame_count as usize - 1];
+                        let subclass = self.stack.peek(0).as_class();
+                        unsafe {
+                            (*subclass)
+                                .methods
+                                .add_all(&(*superclass.as_class()).methods, self);
+                        };
+                        self.stack.pop();
+                    }
+                    OpCode::GetSuper => {
+                        let name_position = unsafe { *(*frame).ip } as usize;
+                        (*frame).ip = unsafe { (*frame).ip.add(1) };
+
+                        let name = unsafe { &(*(*(*frame).closure).function).chunk }.values
+                            [name_position]
+                            .as_string();
+
+                        let superclass = self.stack.pop().as_class();
+
+                        if bind_method(self, superclass, name).is_err() {
+                            return InterpretResult::RuntimeError;
+                        }
+                    }
+                    OpCode::SuperInvoke => {
+                        let method_position = unsafe { *(*frame).ip } as usize;
+                        (*frame).ip = unsafe { (*frame).ip.add(1) };
+                        let method = unsafe { &(*(*(*frame).closure).function).chunk }.values
+                            [method_position]
+                            .as_string();
+
+                        let arg_count = unsafe { *(*frame).ip } as usize;
+                        (*frame).ip = unsafe { (*frame).ip.add(1) };
+
+                        let superclass = self.stack.pop().as_class();
+
+                        if !self.invoke_from_class(superclass, method, arg_count) {
+                            return InterpretResult::RuntimeError;
+                        }
+
+                        frame = &mut self.frames[self.frame_count as usize - 1];
+                    }
+                    OpCode::Unknown => panic!("Something went wrong running the bytecode"),
                 }
-                OpCode::Unknown => panic!("Something went wrong running the bytecode"),
             }
         }
     }
@@ -545,7 +571,7 @@ impl VM {
             unreachable!("eventhing is wrapper up in a closure")
         } else if callee.is_class() {
             let class = callee.as_class();
-            let instance = Value::from(ObjInstance::new(&mut self.objects, class));
+            let instance = Value::from(ObjInstance::new(&mut self.objects, class, self));
             let stack_len = self.stack.len();
             unsafe {
                 *self.stack.as_mut_ptr().add(stack_len - arg_count - 1) = instance.clone();
@@ -619,14 +645,14 @@ impl VM {
         let mut object = self.objects;
         while !object.is_null() {
             let next = unsafe { (*object).next.0 };
-            unsafe { free_object(object) };
+            unsafe { free_object(object, self) };
             object = next;
         }
 
         self.objects = std::ptr::null_mut();
 
-        self.strings.free();
-        self.globals.free();
+        self.strings_free();
+        self.globals_free();
     }
 
     fn runtime_error(&mut self, message: &str) {
@@ -658,32 +684,57 @@ impl VM {
     }
 
     fn define_native(&mut self, name: &str, function: NativeFn) {
-        let name = Value::from(ObjString::new(name, &mut self.objects, &mut self.strings));
+        let name = Value::from(ObjString::new(
+            name,
+            &mut self.objects,
+            &mut self.strings,
+            self,
+        ));
         self.stack.push(name);
 
-        let native = Value::from(ObjNative::new(function, &mut self.objects));
+        let native = Value::from(ObjNative::new(function, &mut self.objects, self));
         self.stack.push(native);
 
-        self.globals
-            .set(self.stack.peek(1).as_string(), self.stack.peek(0).clone());
+        self.globals_set(self.stack.peek(1).as_string(), self.stack.peek(0).clone());
 
         self.stack.pop();
         self.stack.pop();
     }
+
+    fn globals_set(&mut self, key: *mut ObjString, value: Value) -> bool {
+        let mut globals = std::mem::replace(&mut self.globals, HashTable::new());
+        let is_new = globals.set(key, value, self);
+        self.globals = globals;
+        is_new
+    }
+
+    fn strings_free(&mut self) {
+        let mut strings = std::mem::replace(&mut self.strings, HashTable::new());
+        strings.free(self);
+        self.strings = strings;
+    }
+
+    fn globals_free(&mut self) {
+        let mut globals = std::mem::replace(&mut self.globals, HashTable::new());
+        globals.free(self);
+        self.globals = globals;
+    }
+
+    fn gray_stack_push_no_gc(&mut self, object: *mut Obj) {
+        let mut gray_stack = std::mem::take(&mut self.gray_stack);
+        gray_stack.write_no_gc(object, self);
+        self.gray_stack = gray_stack;
+    }
 }
 
-fn bind_method(
-    objects: &mut *mut Obj,
-    stack: &mut Stack<Value>,
-    class: *mut ObjClass,
-    name: *mut ObjString,
-) -> Result<(), String> {
+fn bind_method(vm: &mut VM, class: *mut ObjClass, name: *mut ObjString) -> Result<(), String> {
     let method = unsafe { (*class).methods.get(name) };
     if let Some(m) = method {
-        let bound_method =
-            ObjBoundMethod::new(objects, stack.peek(0).clone(), unsafe { (*m).as_closure() });
-        stack.pop();
-        stack.push(Value::from(bound_method));
+        let receiver = vm.stack.peek(0).clone();
+        let objects = std::ptr::addr_of_mut!(vm.objects);
+        let bound_method = ObjBoundMethod::new(objects, receiver, unsafe { (*m).as_closure() }, vm);
+        vm.stack.pop();
+        vm.stack.push(Value::from(bound_method));
         Ok(())
     } else {
         Err(format!("Undefined property '{}'.", Value::from(name)))
@@ -698,13 +749,10 @@ fn clock_native(_: usize, _: *mut Value) -> Value {
     Value::from(elapsed)
 }
 
-fn capture_upvalue(
-    upvalue: &mut *mut ObjUpvalue,
-    objects: *mut *mut Obj,
-    local: *mut Value,
-) -> *mut ObjUpvalue {
+fn capture_upvalue(local: *mut Value, vm: &mut VM) -> *mut ObjUpvalue {
+    let upvalue = std::ptr::addr_of_mut!(vm.open_upvalues);
     let mut prev_upvalue = std::ptr::null_mut();
-    let mut curr_upvalue = *upvalue;
+    let mut curr_upvalue = unsafe { *upvalue };
     while !curr_upvalue.is_null() && unsafe { (*curr_upvalue).location } > local {
         prev_upvalue = curr_upvalue;
         curr_upvalue = unsafe { (*curr_upvalue).next };
@@ -714,11 +762,12 @@ fn capture_upvalue(
         return curr_upvalue;
     }
 
-    let created_upvalue = ObjUpvalue::new(objects, local);
+    let objects = std::ptr::addr_of_mut!(vm.objects);
+    let created_upvalue = ObjUpvalue::new(objects, local, vm);
     unsafe { (*created_upvalue).next = curr_upvalue };
 
     if prev_upvalue.is_null() {
-        *upvalue = created_upvalue;
+        unsafe { *upvalue = created_upvalue };
     } else {
         unsafe { (*prev_upvalue).next = created_upvalue };
     }
@@ -762,6 +811,207 @@ pub struct CallFrame {
 impl Drop for VM {
     fn drop(&mut self) {
         self.free();
+    }
+}
+
+impl GcCollector for VM {
+    fn gc_context(&mut self) -> GcContext<'_> {
+        GcContext {
+            bytes_allocated: &mut self.bytes_allocated,
+            next_gc: &mut self.next_gc,
+            stress_gc: crate::DEBUG_STRESS_GC,
+        }
+    }
+
+    fn collect_garbage(&mut self) {
+        self.garbage_collect();
+    }
+}
+
+impl VM {
+    pub fn garbage_collect(&mut self) {
+        let before = self.bytes_allocated;
+        if DEBUG_LOG_GC {
+            println!("-- gc begin");
+        }
+
+        self.mark_roots();
+        self.trace_references();
+        self.table_remove_white();
+        self.sweep();
+
+        self.next_gc = self.bytes_allocated * 2;
+
+        if DEBUG_LOG_GC {
+            println!("-- gc end");
+            println!(
+                "   collected {} bytes (from {} to {}) next at {}",
+                before - self.bytes_allocated,
+                before,
+                self.bytes_allocated,
+                self.next_gc
+            );
+        }
+    }
+
+    fn mark_roots(&mut self) {
+        unsafe {
+            for i in 0..self.stack.len() {
+                let value = &mut self.stack[i].clone();
+                self.mark_value(value);
+            }
+
+            for i in 0..self.frame_count as usize {
+                self.mark_object(self.frames[i].closure as *mut Obj);
+            }
+
+            let mut next_upvalue = self.open_upvalues;
+            while !next_upvalue.is_null() {
+                self.mark_object(next_upvalue as *mut Obj);
+                next_upvalue = (*next_upvalue).next;
+            }
+
+            for i in 0..self.globals.capacity {
+                let entry = self.globals.entries.add(i);
+                self.mark_object((*entry).key as *mut Obj);
+                self.mark_value(&mut (*entry).value);
+            }
+            self.mark_compiler_roots(self.compiler);
+            self.mark_object(self.init_string as *mut Obj);
+        }
+    }
+
+    fn mark_value(&mut self, value: &mut Value) {
+        if value.is_obj() {
+            self.mark_object(value.as_obj());
+        }
+    }
+
+    fn mark_object(&mut self, object: *mut Obj) {
+        if object.is_null() {
+            return;
+        }
+        if unsafe { (*object).is_marked } {
+            return;
+        }
+
+        if DEBUG_LOG_GC {
+            println!("{:?} mark", object);
+            println!("{:?}", Value::from(object));
+        }
+
+        unsafe {
+            (*object).is_marked = true;
+        }
+
+        self.gray_stack_push_no_gc(object);
+    }
+
+    fn mark_table(&mut self, table: &mut HashTable) {
+        for i in 0..table.capacity {
+            let entry = unsafe { table.entries.add(i) };
+            self.mark_object(unsafe { (*entry).key } as *mut Obj);
+            self.mark_value(unsafe { &mut (*entry).value });
+        }
+    }
+
+    fn mark_compiler_roots(&mut self, compiler: *mut Compiler) {
+        let mut curr_compiler = compiler;
+        while !curr_compiler.is_null() {
+            self.mark_object(unsafe { (*curr_compiler).function } as *mut Obj);
+            curr_compiler = unsafe { (*curr_compiler).enclosing };
+        }
+    }
+
+    fn trace_references(&mut self) {
+        while self.gray_stack.count > 0 {
+            self.gray_stack.count -= 1;
+            let object = self.gray_stack[self.gray_stack.count];
+            self.blacken_object(object);
+        }
+    }
+
+    fn blacken_object(&mut self, object: *mut Obj) {
+        if DEBUG_LOG_GC {
+            println!("{:?} blacken", object);
+            println!("{:?}", Value::from(object));
+        }
+
+        match unsafe { &(*object).otype } {
+            ObjType::String => {}
+            ObjType::Native => {}
+            ObjType::Upvalue => {
+                let upvalue = object as *mut ObjUpvalue;
+                self.mark_value(unsafe { &mut (*upvalue).closed });
+            }
+            ObjType::Function => {
+                let function = object as *mut ObjFunction;
+                self.mark_object(unsafe { (*function).name } as *mut Obj);
+                for i in 0..unsafe { (*function).chunk.values.count } {
+                    self.mark_value(unsafe { &mut (&mut (*function).chunk.values)[i] });
+                }
+            }
+            ObjType::Closure => {
+                let closure = object as *mut ObjClosure;
+                self.mark_object(unsafe { (*closure).function } as *mut Obj);
+                for i in 0..unsafe { (*closure).upvalue_count } {
+                    self.mark_object(unsafe { (*closure).upvalues.add(i) } as *mut Obj);
+                }
+            }
+            ObjType::Class => {
+                let class = object as *mut ObjClass;
+                self.mark_object(unsafe { (*class).name } as *mut Obj);
+                self.mark_table(unsafe { &mut (*class).methods });
+            }
+            ObjType::Instance => {
+                let instance = object as *mut ObjInstance;
+                self.mark_object(unsafe { (*instance).class } as *mut Obj);
+                self.mark_table(unsafe { &mut (*instance).fields });
+            }
+            ObjType::BoundMethod => {
+                let bound_method = object as *mut ObjBoundMethod;
+                self.mark_value(unsafe { &mut (*bound_method).receiver });
+                self.mark_object(unsafe { (*bound_method).method } as *mut Obj);
+            }
+        }
+    }
+
+    fn table_remove_white(&mut self) {
+        unsafe {
+            let mut i = 0;
+            while i < self.strings.capacity {
+                let entry = self.strings.entries.add(i);
+                let key = (*entry).key;
+                let key_obj = key as *mut Obj;
+                if !key.is_null() && !(*key_obj).is_marked {
+                    self.strings.delete(key);
+                }
+                i += 1;
+            }
+        }
+    }
+
+    fn sweep(&mut self) {
+        unsafe {
+            let mut previous = std::ptr::null_mut();
+            let mut object = self.objects;
+            while !object.is_null() {
+                if (*object).is_marked {
+                    (*object).is_marked = false;
+                    previous = object;
+                    object = (*object).next.0;
+                } else {
+                    let unreached = object;
+                    object = (*object).next.0;
+                    if !previous.is_null() {
+                        (*previous).next = object.into();
+                    } else {
+                        self.objects = object;
+                    }
+                    free_object(unreached, self);
+                }
+            }
+        }
     }
 }
 

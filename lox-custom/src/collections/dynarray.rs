@@ -5,7 +5,8 @@ use std::{
 
 use crate::memory::{
     alloc::reallocate_no_gc,
-    array::{free_array, grow_array, grow_capacity},
+    array::{grow_array, grow_capacity},
+    gc::GcCollector,
 };
 
 pub struct DynArray<T> {
@@ -25,32 +26,26 @@ impl<T> Default for DynArray<T> {
 }
 
 impl<T> DynArray<T> {
-    pub fn write(&mut self, data: T) {
+    pub fn write(&mut self, data: T, gc: &mut impl GcCollector) {
         if self.capacity == self.count {
             let old_capacity = self.capacity;
             self.capacity = grow_capacity(old_capacity);
-            self.data = grow_array::<T>(self.data, old_capacity, self.capacity);
+            self.data = grow_array::<T>(self.data, old_capacity, self.capacity, gc);
         }
 
         unsafe { self.data.add(self.count).write(data) };
         self.count += 1;
     }
 
-    pub fn write_no_gc(&mut self, data: T) {
+    pub fn write_no_gc(&mut self, data: T, gc: &mut impl GcCollector) {
         if self.capacity == self.count {
             let old_capacity = self.capacity;
             self.capacity = grow_capacity(old_capacity);
-            self.data = reallocate_no_gc(self.data, old_capacity, self.capacity);
+            self.data = reallocate_no_gc(self.data, old_capacity, self.capacity, gc);
         }
 
         unsafe { self.data.add(self.count).write(data) };
         self.count += 1;
-    }
-}
-
-impl<T> Drop for DynArray<T> {
-    fn drop(&mut self) {
-        free_array(self.data, self.capacity, self.count);
     }
 }
 
@@ -90,20 +85,23 @@ impl<T: PartialEq> PartialEq for DynArray<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::vm::VM;
 
     fn assert_dynarray_works_with_type<T>()
     where
         T: Default + Copy + Debug + PartialEq + From<u8>,
     {
+        let mut vm = VM::new();
+
         let mut array = DynArray::<T>::default();
         for i in 0..8u8 {
-            array.write(T::from(i));
+            array.write(T::from(i), &mut vm);
             assert_eq!(array[i as usize], T::from(i));
             assert_eq!(array.count, (i + 1) as usize);
             assert_eq!(array.capacity, 8);
         }
 
-        array.write(T::from(9));
+        array.write(T::from(9), &mut vm);
         assert_eq!(array[8], T::from(9));
         assert_eq!(array.count, 9);
         assert_eq!(array.capacity, 16);
@@ -127,17 +125,19 @@ mod tests {
 
     #[test]
     fn test_dynarray_eq() {
+        let mut vm = VM::new();
+
         let mut array1 = DynArray::default();
         let mut array2 = DynArray::default();
 
         for i in 0..8 {
-            array1.write(i);
-            array2.write(i);
+            array1.write(i, &mut vm);
+            array2.write(i, &mut vm);
         }
 
         assert_eq!(array1, array2);
 
-        array1.write(8);
+        array1.write(8, &mut vm);
         assert_ne!(array1, array2);
     }
 
@@ -145,6 +145,6 @@ mod tests {
     #[test]
     fn test_dynarray_string() {
         let mut array = DynArray::<String>::default();
-        array.write(String::from("hello"));
+        array.write(String::from("hello"), &mut VM::new());
     }
 }

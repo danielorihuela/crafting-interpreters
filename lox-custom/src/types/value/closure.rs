@@ -6,6 +6,7 @@ use crate::{
         obj::{Obj, ObjType, allocate_object},
         upvalue::ObjUpvalue,
     },
+    vm::VM,
 };
 use std::fmt::Display;
 
@@ -31,15 +32,15 @@ impl Display for ObjClosure {
 }
 
 impl ObjClosure {
-    pub fn new(objects: *mut *mut Obj, function: *mut ObjFunction) -> *mut ObjClosure {
+    pub fn new(objects: *mut *mut Obj, function: *mut ObjFunction, vm: &mut VM) -> *mut ObjClosure {
         let count = unsafe { (*function).upvalue_count };
 
         let upvalues = std::ptr::null_mut::<*mut ObjUpvalue>();
         if count == 0 {
-            return allocate_closure(objects, function, upvalues);
+            return allocate_closure(objects, function, upvalues, vm);
         }
 
-        let upvalues = grow_array(upvalues, 0, count);
+        let upvalues = grow_array(upvalues, 0, count, vm);
 
         for i in 0..count {
             unsafe {
@@ -47,7 +48,7 @@ impl ObjClosure {
             }
         }
 
-        allocate_closure(objects, function, upvalues)
+        allocate_closure(objects, function, upvalues, vm)
     }
 }
 
@@ -55,8 +56,9 @@ fn allocate_closure(
     objects: *mut *mut Obj,
     function: *mut ObjFunction,
     upvalues: *mut *mut ObjUpvalue,
+    vm: &mut VM,
 ) -> *mut ObjClosure {
-    let closure = allocate_object::<ObjClosure>(ObjType::Closure, objects);
+    let closure = allocate_object::<ObjClosure>(ObjType::Closure, objects, vm);
 
     unsafe {
         (*closure).function = function;

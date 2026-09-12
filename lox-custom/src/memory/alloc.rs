@@ -1,43 +1,27 @@
 use std::alloc::{Layout, alloc, dealloc, realloc};
-use std::sync::atomic::{AtomicUsize, Ordering};
 
-use crate::{DEBUG_STRESS_GC, VM_INSTANCE, garbage_collect, vm_is_ready};
+use crate::memory::gc::GcCollector;
 
-static BOOTSTRAP_BYTES_ALLOCATED: AtomicUsize = AtomicUsize::new(0);
-
-fn adjust_bytes_allocated(old_size: usize, new_size: usize) {
-    unsafe {
-        if VM_INSTANCE.is_null() {
-            if new_size >= old_size {
-                BOOTSTRAP_BYTES_ALLOCATED.fetch_add(new_size - old_size, Ordering::Relaxed);
-            } else {
-                BOOTSTRAP_BYTES_ALLOCATED.fetch_sub(old_size - new_size, Ordering::Relaxed);
-            }
-            return;
-        }
-
-        if new_size >= old_size {
-            (*VM_INSTANCE).bytes_allocated += new_size - old_size;
-        } else {
-            (*VM_INSTANCE).bytes_allocated -= old_size - new_size;
-        }
-    }
+pub fn allocate<T>(size: usize, gc: &mut impl GcCollector) -> *mut T {
+    reallocate(std::ptr::null_mut::<T>(), 0, size, gc)
 }
 
-pub fn take_bootstrap_bytes_allocated() -> usize {
-    BOOTSTRAP_BYTES_ALLOCATED.swap(0, Ordering::Relaxed)
+pub fn reallocate<T>(
+    ptr: *mut T,
+    old_capacity: usize,
+    new_capacity: usize,
+    gc: &mut impl GcCollector,
+) -> *mut T {
+    reallocate_inner(ptr, old_capacity, new_capacity, true, gc)
 }
 
-pub fn allocate<T>(size: usize) -> *mut T {
-    reallocate(std::ptr::null_mut::<T>(), 0, size)
-}
-
-pub fn reallocate<T>(ptr: *mut T, old_capacity: usize, new_capacity: usize) -> *mut T {
-    reallocate_inner(ptr, old_capacity, new_capacity, true)
-}
-
-pub fn reallocate_no_gc<T>(ptr: *mut T, old_capacity: usize, new_capacity: usize) -> *mut T {
-    reallocate_inner(ptr, old_capacity, new_capacity, false)
+pub fn reallocate_no_gc<T>(
+    ptr: *mut T,
+    old_capacity: usize,
+    new_capacity: usize,
+    gc: &mut impl GcCollector,
+) -> *mut T {
+    reallocate_inner(ptr, old_capacity, new_capacity, false, gc)
 }
 
 fn reallocate_inner<T>(
@@ -45,20 +29,19 @@ fn reallocate_inner<T>(
     old_capacity: usize,
     new_capacity: usize,
     gc_enabled: bool,
+    gc: &mut impl GcCollector,
 ) -> *mut T {
     let old_size = old_capacity.saturating_mul(std::mem::size_of::<T>());
     let new_size = new_capacity.saturating_mul(std::mem::size_of::<T>());
 
-    adjust_bytes_allocated(old_size, new_size);
+    let should_collect_now = {
+        let mut context = gc.gc_context();
+        context.charge_allocation(old_size, new_size);
+        gc_enabled && new_capacity > old_capacity && context.should_collect_now()
+    };
 
-    if gc_enabled && new_capacity > old_capacity && vm_is_ready() {
-        if DEBUG_STRESS_GC {
-            garbage_collect();
-        }
-
-        if unsafe { (*VM_INSTANCE).bytes_allocated > (*VM_INSTANCE).next_gc } {
-            garbage_collect();
-        }
+    if should_collect_now {
+        gc.collect_garbage();
     }
 
     let new_layout = Layout::array::<T>(new_capacity).unwrap();

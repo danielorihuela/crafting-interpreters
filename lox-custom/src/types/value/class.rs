@@ -6,6 +6,7 @@ use crate::{
         obj::{Obj, ObjType, allocate_object},
         string::ObjString,
     },
+    vm::VM,
 };
 
 #[repr(C)]
@@ -25,13 +26,13 @@ impl Display for ObjClass {
 use std::fmt::Display;
 
 impl ObjClass {
-    pub fn new(objects: *mut *mut Obj, name: *mut ObjString) -> *mut ObjClass {
-        allocate_class(objects, name)
+    pub fn new(objects: *mut *mut Obj, name: *mut ObjString, vm: &mut VM) -> *mut ObjClass {
+        allocate_class(objects, name, vm)
     }
 }
 
-fn allocate_class(objects: *mut *mut Obj, name: *mut ObjString) -> *mut ObjClass {
-    let class = allocate_object::<ObjClass>(ObjType::Class, objects);
+fn allocate_class(objects: *mut *mut Obj, name: *mut ObjString, vm: &mut VM) -> *mut ObjClass {
+    let class = allocate_object::<ObjClass>(ObjType::Class, objects, vm);
 
     unsafe {
         (*class).name = name;
@@ -57,13 +58,17 @@ impl Display for ObjInstance {
 }
 
 impl ObjInstance {
-    pub fn new(objects: *mut *mut Obj, class: *mut ObjClass) -> *mut ObjInstance {
-        allocate_instance(objects, class)
+    pub fn new(objects: *mut *mut Obj, class: *mut ObjClass, vm: &mut VM) -> *mut ObjInstance {
+        allocate_instance(objects, class, vm)
     }
 }
 
-fn allocate_instance(objects: *mut *mut Obj, class: *mut ObjClass) -> *mut ObjInstance {
-    let instance = allocate_object::<ObjInstance>(ObjType::Instance, objects);
+fn allocate_instance(
+    objects: *mut *mut Obj,
+    class: *mut ObjClass,
+    vm: &mut VM,
+) -> *mut ObjInstance {
+    let instance = allocate_object::<ObjInstance>(ObjType::Instance, objects, vm);
 
     unsafe {
         (*instance).class = class;
@@ -98,8 +103,9 @@ impl ObjBoundMethod {
         objects: *mut *mut Obj,
         receiver: Value,
         method: *mut ObjClosure,
+        vm: &mut VM,
     ) -> *mut ObjBoundMethod {
-        allocate_bound_method(objects, receiver, method)
+        allocate_bound_method(objects, receiver, method, vm)
     }
 }
 
@@ -107,8 +113,9 @@ fn allocate_bound_method(
     objects: *mut *mut Obj,
     receiver: Value,
     method: *mut ObjClosure,
+    vm: &mut VM,
 ) -> *mut ObjBoundMethod {
-    let bound_method = allocate_object::<ObjBoundMethod>(ObjType::BoundMethod, objects);
+    let bound_method = allocate_object::<ObjBoundMethod>(ObjType::BoundMethod, objects, vm);
 
     unsafe {
         (*bound_method).receiver = receiver;

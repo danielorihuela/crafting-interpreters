@@ -1,7 +1,7 @@
 use std::mem::transmute;
 
 use crate::{
-    collections::hashtable::HashTable,
+    collections::{hashtable::HashTable, stack::Stack},
     scanner::Scanner,
     types::{
         TokenType,
@@ -9,6 +9,7 @@ use crate::{
         token::Token,
         value::{Value, function::ObjFunction, obj::Obj, string::ObjString},
     },
+    vm::VM,
 };
 
 pub struct Parser<'src> {
@@ -22,6 +23,9 @@ pub struct Parser<'src> {
 
     objects: *mut *mut Obj,
     strings: *mut HashTable,
+    stack: *mut Stack<Value>,
+
+    vm: &'src mut VM,
 
     had_error: bool,
     panic_mode: bool,
@@ -33,6 +37,8 @@ impl<'src> Parser<'src> {
         compiler: *mut Compiler,
         objects: *mut *mut Obj,
         strings: *mut HashTable,
+        stack: *mut Stack<Value>,
+        vm: &'src mut VM,
     ) -> Self {
         Self {
             scanner,
@@ -42,6 +48,8 @@ impl<'src> Parser<'src> {
             previous: Token::default(),
             objects,
             strings,
+            stack,
+            vm,
             had_error: false,
             panic_mode: false,
         }
@@ -183,6 +191,7 @@ impl<'src> Parser<'src> {
             self.strings,
             self.compiler,
             self.previous.lexeme,
+            self.vm,
         );
         self.compiler = Box::into_raw(Box::new(compiler));
         let curr_compiler = unsafe { &mut *self.compiler };
@@ -298,7 +307,7 @@ impl<'src> Parser<'src> {
     }
 
     fn identifier_constant(&mut self) -> u8 {
-        let obj_string = ObjString::new(self.previous.lexeme, self.objects, self.strings);
+        let obj_string = ObjString::new(self.previous.lexeme, self.objects, self.strings, self.vm);
         let value = Value::from(obj_string);
         self.make_constant(value)
     }
@@ -686,6 +695,7 @@ impl<'src> Parser<'src> {
             &self.previous.lexeme[1..self.previous.lexeme.len() - 1],
             self.objects,
             self.strings,
+            self.vm,
         );
         let obj = Value::from(string);
         self.emit_constant(obj);
@@ -739,7 +749,7 @@ impl<'src> Parser<'src> {
                 set_opcode = OpCode::SetUpvalue;
                 get_opcode = OpCode::GetUpvalue;
             } else {
-                let obj_string = ObjString::new(name.lexeme, self.objects, self.strings);
+                let obj_string = ObjString::new(name.lexeme, self.objects, self.strings, self.vm);
                 arg = self.make_constant(Value::from(obj_string)) as isize;
                 set_opcode = OpCode::SetGlobal;
                 get_opcode = OpCode::GetGlobal;
@@ -960,7 +970,7 @@ impl<'src> Parser<'src> {
         unsafe {
             (*(*self.compiler).function)
                 .chunk
-                .write(b.into(), self.previous.line as usize)
+                .write(b.into(), self.previous.line as usize, self.vm)
         }
     }
 
@@ -985,7 +995,11 @@ impl<'src> Parser<'src> {
     }
 
     fn make_constant(&mut self, value: Value) -> u8 {
-        let constant = unsafe { (*(*self.compiler).function).chunk.add_constant(value) };
+        let constant = unsafe {
+            (*(*self.compiler).function)
+                .chunk
+                .add_constant(value, &mut *self.stack, self.vm)
+        };
         if constant > u8::MAX as usize {
             self.error("Too many constants in one chunk.");
             return 0;
@@ -1128,13 +1142,14 @@ pub struct Local {
     is_captured: bool,
 }
 
-impl Compiler {
+impl<'src> Compiler {
     pub fn new(
         ftype: FunctionType,
         objects: *mut *mut Obj,
         strings: *mut HashTable,
         enclosing: *mut Compiler,
         data: &str,
+        vm: &'src mut VM,
     ) -> Self {
         let mut local = Local {
             name: String::new(),
@@ -1158,13 +1173,13 @@ impl Compiler {
                 index: 0,
                 is_local: false,
             }; u8::MAX as usize + 1],
-            function: ObjFunction::new(objects),
+            function: ObjFunction::new(objects, vm),
             ftype: ftype.clone(),
             enclosing,
         };
 
         if ftype != FunctionType::Script {
-            unsafe { (*compiler.function).name = ObjString::new(data, objects, strings) }
+            unsafe { (*compiler.function).name = ObjString::new(data, objects, strings, vm) }
         }
 
         compiler
@@ -1196,27 +1211,29 @@ mod tests {
 
                     let mut objects: *mut Obj = std::ptr::null_mut();
                     let mut strings = HashTable::new();
+                    let mut stack = Stack::default();
 
                     let scanner = &mut Scanner::new(input);
-                    let compiler = &mut Compiler::new(FunctionType::Script, &mut objects, &mut strings, std::ptr::null_mut(), "");
-                    let parser = &mut Parser::new(scanner, compiler, &mut objects, &mut strings);
+                    let mut vm = VM::new();
+                    let compiler = &mut Compiler::new(FunctionType::Script, &mut objects, &mut strings, std::ptr::null_mut(), "", &mut vm);
+                    let parser = &mut Parser::new(scanner, compiler, &mut objects, &mut strings, &mut stack, &mut vm);
 
                     let function = parser.compile();
 
                     let mut expected = Chunk::default();
                     for byte in bytes {
-                        expected.write(byte.into(), 1);
+                        expected.write(byte.into(), 1, &mut vm);
                     }
                     assert_eq!(unsafe { &(*function).chunk.code }, &expected.code);
 
                     let mut object = objects;
                     while !object.is_null() {
                         let next = unsafe { (*object).next.0 };
-                        unsafe { free_object(object) };
+                        unsafe { free_object(object, &mut vm) };
                         object = next;
                     }
 
-                    strings.free();
+                    strings.free(&mut vm);
                 }
             )*
         }

@@ -1,4 +1,8 @@
-use crate::{VM_INSTANCE, collections::dynarray::DynArray, types::value::Value};
+use crate::{
+    collections::{dynarray::DynArray, stack::Stack},
+    types::value::Value,
+    vm::VM,
+};
 
 #[derive(Default)]
 pub struct Chunk {
@@ -8,22 +12,16 @@ pub struct Chunk {
 }
 
 impl Chunk {
-    pub fn write(&mut self, byte: u8, line: usize) {
-        self.code.write(byte);
-        self.lines.write(line);
+    pub fn write(&mut self, byte: u8, line: usize, vm: &mut VM) {
+        self.code.write(byte, vm);
+        self.lines.write(line, vm);
     }
 
-    pub fn add_constant(&mut self, value: Value) -> usize {
-        let vm_ready = unsafe { !VM_INSTANCE.is_null() };
-        if vm_ready {
-            unsafe {
-                (*VM_INSTANCE).stack.push(value.clone());
-                self.values.write(value.clone());
-                (*VM_INSTANCE).stack.pop();
-            }
-        } else {
-            self.values.write(value);
-        }
+    pub fn add_constant(&mut self, value: Value, stack: &mut Stack<Value>, vm: &mut VM) -> usize {
+        stack.push(value.clone());
+        self.values.write(value.clone(), vm);
+        stack.pop();
+
         self.values.count - 1
     }
 }
@@ -150,30 +148,35 @@ mod tests {
 
     #[test]
     fn test_chunk_write() {
+        let mut vm = VM::new();
+
         let mut chunk = Chunk::default();
 
-        chunk.write(1, 1);
+        chunk.write(1, 1, &mut vm);
         assert_eq!(chunk.code[0], 1);
         assert_eq!(chunk.lines[0], 1);
 
-        chunk.write(2, 2);
+        chunk.write(2, 2, &mut vm);
         assert_eq!(chunk.code[1], 2);
         assert_eq!(chunk.lines[1], 2);
 
-        chunk.write(3, 3);
+        chunk.write(3, 3, &mut vm);
         assert_eq!(chunk.code[2], 3);
         assert_eq!(chunk.lines[2], 3);
     }
 
     #[test]
     fn test_chunk_add_constant() {
-        let mut chunk = Chunk::default();
+        let mut vm = VM::new();
 
-        let index = chunk.add_constant(Value::from(42.0));
+        let mut chunk = Chunk::default();
+        let mut stack = Stack::default();
+
+        let index = chunk.add_constant(Value::from(42.0), &mut stack, &mut vm);
         assert_eq!(index, 0);
         assert_eq!(chunk.values[0], Value::from(42.0));
 
-        let index = chunk.add_constant(Value::from(84.0));
+        let index = chunk.add_constant(Value::from(84.0), &mut stack, &mut vm);
         assert_eq!(index, 1);
         assert_eq!(chunk.values[1], Value::from(84.0));
     }

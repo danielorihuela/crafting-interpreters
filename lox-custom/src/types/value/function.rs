@@ -1,12 +1,15 @@
 use std::fmt::Display;
 
-use crate::types::{
-    chunk::Chunk,
-    value::{
-        ObjPtrTarget,
-        obj::{Obj, ObjType, allocate_object},
-        string::ObjString,
+use crate::{
+    types::{
+        chunk::Chunk,
+        value::{
+            ObjPtrTarget,
+            obj::{Obj, ObjType, allocate_object},
+            string::ObjString,
+        },
     },
+    vm::VM,
 };
 
 #[repr(C)]
@@ -32,13 +35,13 @@ impl Display for ObjFunction {
 }
 
 impl ObjFunction {
-    pub fn new(objects: *mut *mut Obj) -> *mut ObjFunction {
-        allocate_function(objects)
+    pub fn new(objects: *mut *mut Obj, vm: &mut VM) -> *mut ObjFunction {
+        allocate_function(objects, vm)
     }
 }
 
-fn allocate_function(objects: *mut *mut Obj) -> *mut ObjFunction {
-    let function = allocate_object::<ObjFunction>(ObjType::Function, objects);
+fn allocate_function(objects: *mut *mut Obj, vm: &mut VM) -> *mut ObjFunction {
+    let function = allocate_object::<ObjFunction>(ObjType::Function, objects, vm);
 
     unsafe {
         std::ptr::addr_of_mut!((*function).arity).write(0);

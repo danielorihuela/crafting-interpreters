@@ -2,6 +2,7 @@ use crate::{
     memory::{
         alloc::allocate,
         array::{free_array, grow_capacity},
+        gc::GcCollector,
     },
     types::value::{Value, string::ObjString},
 };
@@ -28,10 +29,10 @@ impl HashTable {
         }
     }
 
-    pub fn set(&mut self, key: *mut ObjString, value: Value) -> bool {
+    pub fn set(&mut self, key: *mut ObjString, value: Value, gc: &mut impl GcCollector) -> bool {
         if self.count + 1 > (self.capacity as f32 * MAX_LOAD) as usize {
             let new_capacity = grow_capacity(self.capacity);
-            self.adjust_capacity(new_capacity);
+            self.adjust_capacity(new_capacity, gc);
         }
 
         let entry = find_entry(self.entries, self.capacity, key);
@@ -48,8 +49,8 @@ impl HashTable {
         is_new_key
     }
 
-    fn adjust_capacity(&mut self, capacity: usize) {
-        let entries = allocate::<Entry>(capacity);
+    fn adjust_capacity(&mut self, capacity: usize, gc: &mut impl GcCollector) {
+        let entries = allocate::<Entry>(capacity, gc);
         for i in 0..capacity {
             unsafe {
                 entries.add(i).write(Entry {
@@ -74,7 +75,7 @@ impl HashTable {
             self.count += 1;
         }
 
-        free_array(self.entries, self.capacity, self.count);
+        free_array(self.entries, self.capacity, self.count, gc);
 
         self.entries = entries;
         self.capacity = capacity;
@@ -137,22 +138,22 @@ impl HashTable {
         true
     }
 
-    pub fn add_all(&mut self, from: &HashTable) {
+    pub fn add_all(&mut self, from: &HashTable, gc: &mut impl GcCollector) {
         for i in 0..from.capacity {
             let entry = unsafe { from.entries.add(i) };
             if unsafe { (*entry).key.is_null() } {
                 continue;
             }
-            self.set(unsafe { (*entry).key }, unsafe { (*entry).value.clone() });
+            self.set(unsafe { (*entry).key }, unsafe { (*entry).value.clone() }, gc);
         }
     }
 
-    pub fn free(&mut self) {
+    pub fn free(&mut self, gc: &mut impl GcCollector) {
         if self.entries.is_null() {
             return;
         }
 
-        free_array(self.entries, self.capacity, self.count);
+        free_array(self.entries, self.capacity, self.count, gc);
         *self = Self::new();
     }
 }

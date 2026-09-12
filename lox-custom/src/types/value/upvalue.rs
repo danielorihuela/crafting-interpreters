@@ -1,6 +1,9 @@
-use crate::types::value::{
-    ObjPtrTarget, Value,
-    obj::{Obj, ObjType, allocate_object},
+use crate::{
+    types::value::{
+        ObjPtrTarget, Value,
+        obj::{Obj, ObjType, allocate_object},
+    },
+    vm::VM,
 };
 use std::fmt::Display;
 
@@ -21,13 +24,13 @@ impl Display for ObjUpvalue {
 }
 
 impl ObjUpvalue {
-    pub fn new(objects: *mut *mut Obj, slot: *mut Value) -> *mut ObjUpvalue {
-        allocate_upvalue(objects, slot)
+    pub fn new(objects: *mut *mut Obj, slot: *mut Value, vm: &mut VM) -> *mut ObjUpvalue {
+        allocate_upvalue(objects, slot, vm)
     }
 }
 
-fn allocate_upvalue(objects: *mut *mut Obj, slot: *mut Value) -> *mut ObjUpvalue {
-    let upvalue = allocate_object::<ObjUpvalue>(ObjType::Upvalue, objects);
+fn allocate_upvalue(objects: *mut *mut Obj, slot: *mut Value, vm: &mut VM) -> *mut ObjUpvalue {
+    let upvalue = allocate_object::<ObjUpvalue>(ObjType::Upvalue, objects, vm);
 
     unsafe {
         (*upvalue).location = slot;
