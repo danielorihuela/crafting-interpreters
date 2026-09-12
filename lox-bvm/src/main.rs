@@ -1,8 +1,4 @@
-use std::{
-    ffi::CString,
-    fs::{self},
-    io::Write,
-};
+use std::{fs, io::Write};
 
 use crate::memory::alloc::take_bootstrap_bytes_allocated;
 use crate::{types::AsciiChar, vm::VM};
@@ -68,9 +64,8 @@ fn repl() {
             println!("Could not read the input: {e}");
         }
 
-        let source = CString::new(line.as_str()).expect("Input doesn't contain null bytes");
         unsafe {
-            (*VM_INSTANCE).interpret(source.as_bytes_with_nul().as_ptr() as *const AsciiChar);
+            (*VM_INSTANCE).interpret(line);
         }
     }
 }
@@ -81,10 +76,7 @@ fn run_file(mut args: std::env::Args) -> i32 {
         return 74;
     };
 
-    let source = CString::new(source.as_str()).expect("Input doesn't contain null bytes");
-    let result = unsafe {
-        (*VM_INSTANCE).interpret(source.as_bytes_with_nul().as_ptr() as *const AsciiChar)
-    };
+    let result = unsafe { (*VM_INSTANCE).interpret(&source) };
 
     result.to_exit_code()
 }

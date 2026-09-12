@@ -1,7 +1,6 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::{
-    AsciiChar,
     collections::{dynarray::DynArray, hashtable::HashTable, stack::Stack},
     compiler::{Compiler, FunctionType, Parser},
     scanner::Scanner,
@@ -73,31 +72,21 @@ impl VM {
             output: Vec::new(),
         };
 
-        vm.init_string = copy_string(
-            "init".as_ptr() as *const AsciiChar,
-            4,
-            &mut vm.objects,
-            &mut vm.strings,
-        );
+        vm.init_string = copy_string("init", &mut vm.objects, &mut vm.strings);
 
-        vm.define_native(
-            "clock".as_ptr() as *mut AsciiChar,
-            "clock".len(),
-            clock_native,
-        );
+        vm.define_native("clock", clock_native);
 
         vm
     }
 
-    pub fn interpret(&mut self, source: *const AsciiChar) -> InterpretResult {
+    pub fn interpret(&mut self, source: &str) -> InterpretResult {
         let scanner = &mut Scanner::new(source);
         let mut compiler = Compiler::new(
             FunctionType::Script,
             &mut self.objects,
             &mut self.strings,
             std::ptr::null_mut(),
-            std::ptr::null(),
-            0,
+            "",
         );
 
         self.compiler = &mut compiler;
@@ -670,13 +659,8 @@ impl VM {
         self.open_upvalues = std::ptr::null_mut();
     }
 
-    fn define_native(&mut self, name: *mut AsciiChar, length: usize, function: NativeFn) {
-        let name = Value::from(ObjString::new(
-            name,
-            length,
-            &mut self.objects,
-            &mut self.strings,
-        ));
+    fn define_native(&mut self, name: &str, function: NativeFn) {
+        let name = Value::from(ObjString::new(name, &mut self.objects, &mut self.strings));
         self.stack.push(name);
 
         let native = Value::from(ObjNative::new(function, &mut self.objects));
@@ -785,23 +769,21 @@ impl Drop for VM {
 
 #[cfg(test)]
 mod tests {
-    use std::ffi::CString;
-
     use super::*;
 
     #[test]
     fn test_interpret_compile_error() {
         let mut vm = VM::new();
-        let source = CString::new("print 1>;").expect("Input doesn't contain null bytes");
-        let result = vm.interpret(source.as_bytes_with_nul().as_ptr() as *const AsciiChar);
+        let source = "print 1>;";
+        let result = vm.interpret(source);
         assert_eq!(result, InterpretResult::CompileError);
     }
 
     #[test]
     fn test_interpret_runtime_error() {
         let mut vm = VM::new();
-        let source = CString::new("print true + false;").expect("Input doesn't contain null bytes");
-        let result = vm.interpret(source.as_bytes_with_nul().as_ptr() as *const AsciiChar);
+        let source = "print true + false;";
+        let result = vm.interpret(source);
         assert_eq!(result, InterpretResult::RuntimeError);
     }
 
@@ -813,8 +795,8 @@ mod tests {
                     let (source, expected) = $data;
 
                     let mut vm = VM::new();
-                    let source = CString::new(format!("print {};", source)).expect("Input doesn't contain null bytes");
-                    let result = vm.interpret(source.as_bytes_with_nul().as_ptr() as *const AsciiChar);
+                    let source = format!("print {};", source);
+                    let result = vm.interpret(&source);
                     assert_eq!(result, InterpretResult::Ok);
                     assert_eq!(vm.output(), &[expected.to_string()]);
 
@@ -859,9 +841,8 @@ mod tests {
     #[test]
     fn print_class_name() {
         let mut vm = VM::new();
-        let source = CString::new("class Brioche {} print Brioche;")
-            .expect("Input doesn't contain null bytes");
-        let result = vm.interpret(source.as_bytes_with_nul().as_ptr() as *const AsciiChar);
+        let source = "class Brioche {} print Brioche;";
+        let result = vm.interpret(source);
 
         assert_eq!(result, InterpretResult::Ok);
         assert_eq!(vm.output(), &["Brioche".to_string()]);

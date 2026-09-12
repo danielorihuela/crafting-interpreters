@@ -12,14 +12,14 @@ use crate::{
     },
 };
 
-pub struct Parser<'a> {
-    scanner: &'a mut Scanner,
+pub struct Parser<'src> {
+    scanner: &'src mut Scanner<'src>,
     compiler: *mut Compiler,
 
     current_class: *mut ClassCompiler,
 
-    current: Token,
-    previous: Token,
+    current: Token<'src>,
+    previous: Token<'src>,
 
     objects: *mut *mut Obj,
     strings: *mut HashTable,
@@ -28,9 +28,9 @@ pub struct Parser<'a> {
     panic_mode: bool,
 }
 
-impl<'a> Parser<'a> {
+impl<'src> Parser<'src> {
     pub fn new(
-        scanner: &'a mut Scanner,
+        scanner: &'src mut Scanner<'src>,
         compiler: *mut Compiler,
         objects: *mut *mut Obj,
         strings: *mut HashTable,
@@ -76,10 +76,7 @@ impl<'a> Parser<'a> {
                 break;
             }
 
-            let message = unsafe {
-                from_utf8_unchecked(from_raw_parts(self.current.start, self.current.length))
-            };
-            self.error_at_current(message);
+            self.error_at_current(self.current.lexeme);
         }
     }
 
@@ -152,12 +149,10 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn synthetic_token(&self, text: &str) -> Token {
-        let bytes = text.as_bytes();
+    fn synthetic_token(&self, text: &'static str) -> Token<'src> {
         Token {
             ttype: TokenType::Identifier,
-            start: bytes.as_ptr(),
-            length: bytes.len(),
+            lexeme: text,
             line: self.previous.line,
         }
     }
@@ -166,9 +161,7 @@ impl<'a> Parser<'a> {
         self.consume(TokenType::Identifier, "Expect method name.");
         let constant = self.identifier_constant();
 
-        if self.previous.length == 4
-            && unsafe { from_raw_parts(self.previous.start, self.previous.length) } == b"init"
-        {
+        if self.previous.lexeme == "init" {
             self.function(FunctionType::Initializer);
         } else {
             self.function(FunctionType::Method);
@@ -190,8 +183,7 @@ impl<'a> Parser<'a> {
             self.objects,
             self.strings,
             self.compiler,
-            self.previous.start,
-            self.previous.length,
+            self.previous.lexeme,
         );
         self.compiler = Box::into_raw(Box::new(compiler));
         let curr_compiler = unsafe { &mut *self.compiler };
@@ -257,7 +249,7 @@ impl<'a> Parser<'a> {
                 break;
             }
 
-            if self.identifiers_equal(&local.name, &self.previous) {
+            if local.name == self.previous.lexeme {
                 self.error("Already a variable with this name in this scope.");
             }
         }
@@ -266,14 +258,7 @@ impl<'a> Parser<'a> {
     }
 
     fn identifiers_equal(&self, a: &Token, b: &Token) -> bool {
-        if a.length != b.length {
-            return false;
-        }
-
-        let a_slice = unsafe { from_raw_parts(a.start, a.length) };
-        let b_slice = unsafe { from_raw_parts(b.start, b.length) };
-
-        a_slice == b_slice
+        a.lexeme == b.lexeme
     }
 
     fn add_local(&mut self) {
@@ -283,20 +268,20 @@ impl<'a> Parser<'a> {
         }
 
         let local = &mut unsafe { &mut (*self.compiler).locals[(*self.compiler).local_count] };
-        local.name = self.previous.clone();
+        local.name = self.previous.lexeme.to_string();
         local.depth = -1;
         local.is_captured = false;
         unsafe { (*self.compiler).local_count += 1 };
     }
 
-    fn add_local_for(&mut self, name: Token) {
+    fn add_local_for(&mut self, name: Token<'src>) {
         if unsafe { (*self.compiler).local_count } == (u8::MAX as usize + 1) {
             self.error("Too many local variables in function.");
             return;
         }
 
         let local = &mut unsafe { &mut (*self.compiler).locals[(*self.compiler).local_count] };
-        local.name = name;
+        local.name = name.lexeme.to_string();
         local.depth = -1;
         local.is_captured = false;
         unsafe { (*self.compiler).local_count += 1 };
@@ -314,12 +299,7 @@ impl<'a> Parser<'a> {
     }
 
     fn identifier_constant(&mut self) -> u8 {
-        let obj_string = ObjString::new(
-            self.previous.start,
-            self.previous.length,
-            self.objects,
-            self.strings,
-        );
+        let obj_string = ObjString::new(self.previous.lexeme, self.objects, self.strings);
         let value = Value::from(obj_string);
         self.make_constant(value)
     }
@@ -634,8 +614,7 @@ impl<'a> Parser<'a> {
     }
 
     fn number(&mut self, can_assign: bool) {
-        let value = unsafe { from_raw_parts(self.previous.start, self.previous.length) };
-        let value = unsafe { from_utf8_unchecked(value) };
+        let value = self.previous.lexeme;
         let value: f64 = value.parse().unwrap();
         self.emit_constant(Value::from(value));
     }
@@ -704,9 +683,11 @@ impl<'a> Parser<'a> {
     }
 
     fn string(&mut self, can_assign: bool) {
-        let start = unsafe { self.previous.start.add(1) };
-        let end = self.previous.length - 2;
-        let string = ObjString::new(start, end, self.objects, self.strings);
+        let string = ObjString::new(
+            &self.previous.lexeme[1..self.previous.lexeme.len() - 1],
+            self.objects,
+            self.strings,
+        );
         let obj = Value::from(string);
         self.emit_constant(obj);
     }
@@ -746,7 +727,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn named_variable_with(&mut self, name: &Token, can_assign: bool) {
+    fn named_variable_with(&mut self, name: &Token<'src>, can_assign: bool) {
         let mut set_opcode = OpCode::SetGlobal;
         let mut get_opcode = OpCode::GetGlobal;
         let mut arg = resolve_local(self, self.compiler, &name);
@@ -759,8 +740,7 @@ impl<'a> Parser<'a> {
                 set_opcode = OpCode::SetUpvalue;
                 get_opcode = OpCode::GetUpvalue;
             } else {
-                let obj_string =
-                    ObjString::new(name.start, name.length, self.objects, self.strings);
+                let obj_string = ObjString::new(name.lexeme, self.objects, self.strings);
                 arg = self.make_constant(Value::from(obj_string)) as isize;
                 set_opcode = OpCode::SetGlobal;
                 get_opcode = OpCode::GetGlobal;
@@ -803,7 +783,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn resolve_upvalue(&mut self, compiler: *mut Compiler, name: &Token) -> isize {
+    fn resolve_upvalue(&mut self, compiler: *mut Compiler, name: &Token<'src>) -> isize {
         if unsafe { (*compiler).enclosing.is_null() } {
             return -1;
         }
@@ -1025,7 +1005,7 @@ impl<'a> Parser<'a> {
         self.error_at(token, message);
     }
 
-    fn error_at(&mut self, token: &Token, message: &str) {
+    fn error_at(&mut self, token: &Token<'src>, message: &str) {
         if self.panic_mode {
             return;
         }
@@ -1037,9 +1017,7 @@ impl<'a> Parser<'a> {
             eprint!(" at end");
         } else if token.ttype == TokenType::Error {
         } else {
-            let s = unsafe { from_raw_parts(token.start, token.length) };
-            let s = String::from_utf8_lossy(s);
-            eprint!(" at '{}'", s);
+            eprint!(" at '{}'", token.lexeme);
         }
 
         eprintln!(": {message}");
@@ -1047,10 +1025,14 @@ impl<'a> Parser<'a> {
     }
 }
 
-fn resolve_local(parser: &mut Parser, compiler: *mut Compiler, name: &Token) -> isize {
+fn resolve_local<'src>(
+    parser: &mut Parser<'src>,
+    compiler: *mut Compiler,
+    name: &Token<'src>,
+) -> isize {
     for i in (0..unsafe { (*compiler).local_count }).rev() {
         let local = unsafe { &(*compiler).locals[i] };
-        if parser.identifiers_equal(&local.name, name) {
+        if local.name == name.lexeme {
             if local.depth == -1 {
                 parser.error("Can't read local variable in its own initializer.");
             }
@@ -1142,7 +1124,7 @@ struct Upvalue {
 
 #[derive(Clone)]
 pub struct Local {
-    name: Token,
+    name: String,
     depth: i8,
     is_captured: bool,
 }
@@ -1153,21 +1135,18 @@ impl Compiler {
         objects: *mut *mut Obj,
         strings: *mut HashTable,
         enclosing: *mut Compiler,
-        chars: *const AsciiChar,
-        length: usize,
+        data: &str,
     ) -> Self {
         let mut local = Local {
-            name: Token::default(),
+            name: String::new(),
             depth: 0,
             is_captured: false,
         };
 
         if ftype != FunctionType::Function {
-            local.name.start = b"this" as *const AsciiChar;
-            local.name.length = 4;
+            local.name = "this".to_string();
         } else {
-            local.name.start = b"" as *const AsciiChar;
-            local.name.length = 0;
+            local.name = String::new();
         }
 
         let mut locals = [0; u8::MAX as usize + 1].map(|_| local.clone());
@@ -1186,7 +1165,7 @@ impl Compiler {
         };
 
         if ftype != FunctionType::Script {
-            unsafe { (*compiler.function).name = ObjString::new(chars, length, objects, strings) }
+            unsafe { (*compiler.function).name = ObjString::new(data, objects, strings) }
         }
 
         compiler
@@ -1205,8 +1184,6 @@ pub enum FunctionType {
 mod tests {
     use super::*;
 
-    use std::ffi::CString;
-
     use crate::collections::hashtable::HashTable;
     use crate::types::chunk::Chunk;
     use crate::types::value::obj::free_object;
@@ -1221,9 +1198,8 @@ mod tests {
                     let mut objects: *mut Obj = std::ptr::null_mut();
                     let mut strings = HashTable::new();
 
-                    let source = CString::new(input).unwrap();
-                    let scanner = &mut Scanner::new(source.as_bytes_with_nul().as_ptr());
-                    let compiler = &mut Compiler::new(FunctionType::Script, &mut objects, &mut strings, std::ptr::null_mut(), std::ptr::null(), 0);
+                    let scanner = &mut Scanner::new(input);
+                    let compiler = &mut Compiler::new(FunctionType::Script, &mut objects, &mut strings, std::ptr::null_mut(), "");
                     let parser = &mut Parser::new(scanner, compiler, &mut objects, &mut strings);
 
                     let function = parser.compile();

@@ -1,24 +1,23 @@
-use crate::{
-    AsciiChar,
-    types::{TokenType, token::Token},
-};
+use crate::types::{TokenType, token::Token};
 
-pub struct Scanner {
-    start: *const AsciiChar,
-    current: *const AsciiChar,
+pub struct Scanner<'src> {
+    source: &'src [u8],
+    start: usize,
+    current: usize,
     line: isize,
 }
 
-impl Scanner {
-    pub fn new(source: *const AsciiChar) -> Self {
+impl<'src> Scanner<'src> {
+    pub fn new(source: &'src str) -> Self {
         Self {
-            start: source,
-            current: source,
+            source: source.as_bytes(),
+            start: 0,
+            current: 0,
             line: 1,
         }
     }
 
-    pub fn get_token(&mut self) -> Token {
+    pub fn get_token(&mut self) -> Token<'src> {
         self.skip_noise();
         self.start = self.current;
 
@@ -26,44 +25,85 @@ impl Scanner {
             return self.make_token(TokenType::Eof);
         }
 
-        let c = self.advance();
+        let c = self.peek();
+        self.advance();
         match c {
-            x if TokenType::is_single_byte(x) => {
-                self.make_token(TokenType::single_byte(x).expect("Already matched"))
-            }
-            x if TokenType::is_comparison(x) => {
-                if self.peek() == b'=' {
+            b'(' => self.make_token(TokenType::LeftParen),
+            b')' => self.make_token(TokenType::RightParen),
+            b'{' => self.make_token(TokenType::LeftBrace),
+            b'}' => self.make_token(TokenType::RightBrace),
+            b',' => self.make_token(TokenType::Comma),
+            b'.' => self.make_token(TokenType::Dot),
+            b'-' => self.make_token(TokenType::Minus),
+            b'+' => self.make_token(TokenType::Plus),
+            b';' => self.make_token(TokenType::Semicolon),
+            b'?' => self.make_token(TokenType::QuestionMark),
+            b':' => self.make_token(TokenType::Colon),
+            b'/' => self.make_token(TokenType::Slash),
+            b'*' => self.make_token(TokenType::Star),
+            b'!' => {
+                if !self.is_end() && self.peek() == b'=' {
                     self.advance();
-                    self.make_token(TokenType::comparison(x, Some(b'=')).expect("Already matched"))
+                    self.make_token(TokenType::BangEqual)
                 } else {
-                    self.make_token(TokenType::comparison(x, None).expect("Already matched"))
+                    self.make_token(TokenType::Bang)
+                }
+            }
+            b'=' => {
+                if !self.is_end() && self.peek() == b'=' {
+                    self.advance();
+                    self.make_token(TokenType::EqualEqual)
+                } else {
+                    self.make_token(TokenType::Equal)
+                }
+            }
+            b'<' => {
+                if !self.is_end() && self.peek() == b'=' {
+                    self.advance();
+                    self.make_token(TokenType::LessEqual)
+                } else {
+                    self.make_token(TokenType::Less)
+                }
+            }
+            b'>' => {
+                if !self.is_end() && self.peek() == b'=' {
+                    self.advance();
+                    self.make_token(TokenType::GreaterEqual)
+                } else {
+                    self.make_token(TokenType::Greater)
                 }
             }
             b'"' => self.string(),
             x if x.is_ascii_digit() => self.number(),
             x if x.is_ascii_alphabetic() || x == b'_' => self.identifier(),
-            _ => self.error_token(b"Unexpected character."),
+            _ => self.error_token("Unexpected character."),
         }
     }
 
     fn skip_noise(&mut self) {
         loop {
-            let c = self.peek();
-            match c {
+            if self.is_end() {
+                break;
+            }
+
+            match self.peek() {
                 b' ' | b'\r' | b'\t' => {
                     self.advance();
                 }
                 b'\n' => {
-                    self.line += 1;
                     self.advance();
+                    self.line += 1;
                 }
                 b'/' => {
-                    if self.peek_at(1) != b'/' {
+                    self.advance();
+
+                    if self.is_end() || self.peek() != b'/' {
+                        self.recede();
                         break;
                     }
 
                     // Skip comment
-                    while self.peek() != b'\n' && !self.is_end() {
+                    while !self.is_end() && self.peek() != b'\n' {
                         self.advance();
                     }
                 }
@@ -72,29 +112,32 @@ impl Scanner {
         }
     }
 
-    fn string(&mut self) -> Token {
-        while self.peek() != b'"' && !self.is_end() {
-            if self.advance() == b'\n' {
+    fn string(&mut self) -> Token<'src> {
+        while !self.is_end() && self.peek() != b'"' {
+            if self.peek() == b'\n' {
                 self.line += 1;
             }
+            self.advance();
         }
 
-        if self.peek() == b'"' {
+        if !self.is_end() && self.peek() == b'"' {
             self.advance();
             self.make_token(TokenType::String)
         } else {
-            self.error_token(b"Unterminated string.")
+            self.error_token("Unterminated string.")
         }
     }
 
-    fn number(&mut self) -> Token {
-        while self.peek().is_ascii_digit() {
+    fn number(&mut self) -> Token<'src> {
+        while !self.is_end() && self.peek().is_ascii_digit() {
             self.advance();
         }
 
-        if self.peek() == b'.' && self.peek_at(1).is_ascii_digit() {
+        if self.current + 1 < self.source.len()
+            && (self.peek() == b'.' && self.peek_at(1).is_ascii_digit())
+        {
             self.advance();
-            while self.peek().is_ascii_digit() {
+            while !self.is_end() && self.peek().is_ascii_digit() {
                 self.advance();
             }
         }
@@ -102,31 +145,41 @@ impl Scanner {
         self.make_token(TokenType::Number)
     }
 
-    fn identifier(&mut self) -> Token {
-        while self.peek().is_ascii_alphanumeric() || self.peek() == b'_' {
+    fn identifier(&mut self) -> Token<'src> {
+        while !self.is_end() && (self.peek().is_ascii_alphanumeric() || self.peek() == b'_') {
             self.advance();
         }
 
-        let length = unsafe { self.current.offset_from(self.start) as usize };
-        let lexeme = unsafe { std::slice::from_raw_parts(self.start, length) };
-
-        let identifier_type = match lexeme {
-            b"and" => TokenType::And,
-            b"class" => TokenType::Class,
-            b"else" => TokenType::Else,
-            b"false" => TokenType::False,
-            b"for" => TokenType::For,
-            b"fun" => TokenType::Fun,
-            b"if" => TokenType::If,
-            b"nil" => TokenType::Nil,
-            b"or" => TokenType::Or,
-            b"print" => TokenType::Print,
-            b"return" => TokenType::Return,
-            b"super" => TokenType::Super,
-            b"this" => TokenType::This,
-            b"true" => TokenType::True,
-            b"var" => TokenType::Var,
-            b"while" => TokenType::While,
+        let lexeme = &self.source[self.start..self.current];
+        let identifier_type = match lexeme.len() {
+            2 => match lexeme[0] {
+                b'i' if lexeme == b"if" => TokenType::If,
+                b'o' if lexeme == b"or" => TokenType::Or,
+                _ => TokenType::Identifier,
+            },
+            3 => match lexeme[0] {
+                b'a' if lexeme == b"and" => TokenType::And,
+                b'f' if lexeme == b"for" => TokenType::For,
+                b'f' if lexeme == b"fun" => TokenType::Fun,
+                b'n' if lexeme == b"nil" => TokenType::Nil,
+                b'v' if lexeme == b"var" => TokenType::Var,
+                _ => TokenType::Identifier,
+            },
+            4 => match lexeme[0] {
+                b'e' if lexeme == b"else" => TokenType::Else,
+                b't' if lexeme == b"this" => TokenType::This,
+                b't' if lexeme == b"true" => TokenType::True,
+                _ => TokenType::Identifier,
+            },
+            5 => match lexeme[0] {
+                b'c' if lexeme == b"class" => TokenType::Class,
+                b'f' if lexeme == b"false" => TokenType::False,
+                b'p' if lexeme == b"print" => TokenType::Print,
+                b's' if lexeme == b"super" => TokenType::Super,
+                b'w' if lexeme == b"while" => TokenType::While,
+                _ => TokenType::Identifier,
+            },
+            6 if lexeme[0] == b'r' && lexeme == b"return" => TokenType::Return,
             _ => TokenType::Identifier,
         };
 
@@ -134,40 +187,39 @@ impl Scanner {
     }
 }
 
-impl Scanner {
-    fn peek(&self) -> AsciiChar {
-        self.peek_at(0)
+impl<'src> Scanner<'src> {
+    fn peek(&self) -> u8 {
+        self.source[self.current]
     }
 
-    fn peek_at(&self, offset: usize) -> AsciiChar {
-        unsafe { *self.current.add(offset) }
+    fn peek_at(&self, offset: usize) -> u8 {
+        self.source[self.current + offset]
     }
 
-    fn advance(&mut self) -> AsciiChar {
-        let c = self.peek();
-        self.current = unsafe { self.current.add(1) };
-        c
+    fn advance(&mut self) {
+        self.current += 1;
+    }
+
+    fn recede(&mut self) {
+        self.current -= 1;
     }
 
     fn is_end(&self) -> bool {
-        self.peek() == b'\0'
+        self.current >= self.source.len()
     }
 
-    fn make_token(&self, ttype: TokenType) -> Token {
+    fn make_token(&self, ttype: TokenType) -> Token<'src> {
         Token {
             ttype,
-            start: self.start,
-            length: unsafe { self.current.offset_from(self.start) as usize },
+            lexeme: unsafe { str::from_utf8_unchecked(&self.source[self.start..self.current]) },
             line: self.line,
         }
     }
 
-    fn error_token(&self, message: &'static [u8]) -> Token {
+    fn error_token(&self, message: &'static str) -> Token<'src> {
         Token {
             ttype: TokenType::Error,
-            start: message.as_ptr(),
-            length: message.len(),
-
+            lexeme: message,
             line: self.line,
         }
     }
@@ -175,7 +227,7 @@ impl Scanner {
 
 #[cfg(test)]
 mod tests {
-    use std::{ffi::CString, time::Instant};
+    use std::time::Instant;
 
     use super::*;
 
@@ -186,8 +238,7 @@ mod tests {
                 fn $name() {
                     let (input, token_type) = $value;
 
-                    let source = CString::new(input).unwrap();
-                    let scanner = &mut Scanner::new(source.as_bytes_with_nul().as_ptr());
+                    let scanner = &mut Scanner::new(input);
                     let token = scanner.get_token();
                     assert_eq!(token.ttype, token_type);
                 }
@@ -252,8 +303,7 @@ mod tests {
     #[test]
     fn complex_expression() {
         let input = "if (value >= 10) {\n print value;\n }";
-        let source = CString::new(input).unwrap();
-        let scanner = &mut Scanner::new(source.as_bytes_with_nul().as_ptr());
+        let scanner = &mut Scanner::new(input);
 
         let tokens = vec![
             (TokenType::If, 2, 1),
@@ -273,7 +323,7 @@ mod tests {
         for expected in tokens {
             let token = scanner.get_token();
             assert_eq!(token.ttype, expected.0);
-            assert_eq!(token.length, expected.1);
+            assert_eq!(token.lexeme.len(), expected.1);
             assert_eq!(token.line, expected.2);
         }
     }
@@ -282,12 +332,11 @@ mod tests {
     #[test]
     fn test_bench() {
         let input = include_str!("../../benchmark.lox");
-        let input = input.repeat(2000);
+        let input = input.repeat(200000);
 
         let start = Instant::now();
 
-        let source = CString::new(input.as_str()).unwrap();
-        let mut scanner = Scanner::new(source.as_bytes_with_nul().as_ptr());
+        let mut scanner = Scanner::new(&input);
         loop {
             let token = scanner.get_token();
             if token.ttype == TokenType::Eof {

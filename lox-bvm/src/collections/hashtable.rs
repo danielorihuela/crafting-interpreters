@@ -3,10 +3,7 @@ use crate::{
         alloc::allocate,
         array::{free_array, grow_capacity},
     },
-    types::{
-        AsciiChar,
-        value::{Value, string::ObjString},
-    },
+    types::value::{Value, string::ObjString},
 };
 
 const MAX_LOAD: f32 = 0.75;
@@ -96,12 +93,7 @@ impl HashTable {
         Some(unsafe { &(*entry).value })
     }
 
-    pub fn find_string(
-        &self,
-        chars: *const AsciiChar,
-        length: usize,
-        hash: u32,
-    ) -> Option<*mut ObjString> {
+    pub fn find_string(&self, data: &str, hash: u32) -> Option<*mut ObjString> {
         if self.count == 0 {
             return None;
         }
@@ -113,11 +105,11 @@ impl HashTable {
                 if unsafe { (*entry).value.is_nil() } {
                     return None;
                 }
-            } else if unsafe { (*(*entry).key).length } == length
+            } else if unsafe { (*(*entry).key).length } == data.len()
                 && unsafe { (*(*entry).key).hash } == hash
                 && unsafe {
                     std::slice::from_raw_parts((*(*entry).key).chars, (*(*entry).key).length)
-                        == std::slice::from_raw_parts(chars, length)
+                        == data.as_bytes()
                 }
             {
                 return Some(unsafe { (*entry).key });

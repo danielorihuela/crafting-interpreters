@@ -4,7 +4,6 @@ use std::ptr::copy_nonoverlapping;
 use crate::VM_INSTANCE;
 use crate::collections::hashtable::HashTable;
 use crate::memory::alloc::allocate;
-use crate::memory::array::free_array;
 use crate::types::value::{ObjPtrTarget, Value};
 use crate::types::{
     AsciiChar,
@@ -30,13 +29,8 @@ impl Display for ObjString {
 }
 
 impl ObjString {
-    pub fn new(
-        chars: *const AsciiChar,
-        length: usize,
-        objects: *mut *mut Obj,
-        strings: *mut HashTable,
-    ) -> *mut ObjString {
-        copy_string(chars, length, objects, strings)
+    pub fn new(data: &str, objects: *mut *mut Obj, strings: *mut HashTable) -> *mut ObjString {
+        copy_string(data, objects, strings)
     }
 
     pub fn add(
@@ -45,23 +39,22 @@ impl ObjString {
         objects: *mut *mut Obj,
         strings: *mut HashTable,
     ) -> *mut ObjString {
-        let length = self.length + unsafe { (*rhs).length };
-        let chars = allocate::<AsciiChar>(length + 1);
+        let lhs = unsafe { std::slice::from_raw_parts(self.chars, self.length) };
+        let rhs_len = unsafe { (*rhs).length };
+        let rhs_bytes = unsafe { std::slice::from_raw_parts((*rhs).chars, rhs_len) };
 
-        unsafe {
-            copy_nonoverlapping(self.chars, chars, self.length);
-            copy_nonoverlapping((*rhs).chars, chars.add(self.length), (*rhs).length);
-            chars.add(length).write(0);
-        }
+        let mut merged = String::with_capacity(self.length + rhs_len);
+        merged.push_str(unsafe { std::str::from_utf8_unchecked(lhs) });
+        merged.push_str(unsafe { std::str::from_utf8_unchecked(rhs_bytes) });
 
-        take_string(chars, length, objects, strings)
+        take_string(merged, objects, strings)
     }
 }
 
-fn hash_string(chars: *const AsciiChar, length: usize) -> u32 {
+fn hash_string(data: &str) -> u32 {
     let mut hash: u32 = 2166136261;
-    for i in 0..length {
-        hash ^= unsafe { *chars.add(i) } as u32;
+    for i in 0..data.len() {
+        hash ^= data.as_bytes()[i] as u32;
         hash = hash.wrapping_mul(16777619);
     }
 
@@ -95,39 +88,41 @@ fn allocate_string(
     obj_string
 }
 
-pub fn copy_string(
-    chars: *const AsciiChar,
-    length: usize,
-    objects: *mut *mut Obj,
-    strings: *mut HashTable,
-) -> *mut ObjString {
-    let hash = hash_string(chars, length);
-    let interned = unsafe { (*strings).find_string(chars, length, hash) };
+pub fn copy_string(data: &str, objects: *mut *mut Obj, strings: *mut HashTable) -> *mut ObjString {
+    let hash = hash_string(data);
+    let interned = unsafe { (*strings).find_string(data, hash) };
     if let Some(interned) = interned {
         return interned;
     }
 
-    let heap_chars = allocate::<AsciiChar>(length + 1);
+    let bytes = data.as_bytes();
+    let chars = allocate::<AsciiChar>(bytes.len() + 1);
     unsafe {
-        copy_nonoverlapping(chars, heap_chars, length);
-        heap_chars.add(length).write(0)
-    };
+        copy_nonoverlapping(bytes.as_ptr() as *const AsciiChar, chars, bytes.len());
+        chars.add(bytes.len()).write(0);
+    }
 
-    allocate_string(heap_chars, length, hash, objects, strings)
+    allocate_string(chars, bytes.len(), hash, objects, strings)
 }
 
-fn take_string(
-    chars: *mut AsciiChar,
-    length: usize,
-    objects: *mut *mut Obj,
-    strings: *mut HashTable,
-) -> *mut ObjString {
-    let hash = hash_string(chars, length);
-    let interned = unsafe { (*strings).find_string(chars, length, hash) };
+fn take_string(data: String, objects: *mut *mut Obj, strings: *mut HashTable) -> *mut ObjString {
+    let bytes = data.into_bytes();
+    let hash = hash_string(std::str::from_utf8(&bytes).expect("string literals must be utf-8"));
+    let interned = unsafe {
+        (*strings).find_string(
+            std::str::from_utf8(&bytes).expect("string literals must be utf-8"),
+            hash,
+        )
+    };
     if let Some(interned) = interned {
-        free_array(chars, length + 1, length + 1);
         return interned;
     }
 
-    allocate_string(chars, length, hash, objects, strings)
+    let chars = allocate::<AsciiChar>(bytes.len() + 1);
+    unsafe {
+        copy_nonoverlapping(bytes.as_ptr() as *const AsciiChar, chars, bytes.len());
+        chars.add(bytes.len()).write(0);
+    }
+
+    allocate_string(chars, bytes.len(), hash, objects, strings)
 }
