@@ -55,7 +55,7 @@ impl HashTable {
             unsafe {
                 entries.add(i).write(Entry {
                     key: std::ptr::null_mut(),
-                    value: Value::from(()),
+                    value: Value::Nil,
                 })
             };
         }
@@ -132,7 +132,7 @@ impl HashTable {
 
         unsafe {
             (*entry).key = std::ptr::null_mut();
-            (*entry).value = Value::from(true);
+            (*entry).value = Value::Bool(true);
         }
 
         true
@@ -144,7 +144,11 @@ impl HashTable {
             if unsafe { (*entry).key.is_null() } {
                 continue;
             }
-            self.set(unsafe { (*entry).key }, unsafe { (*entry).value.clone() }, gc);
+            self.set(
+                unsafe { (*entry).key },
+                unsafe { (*entry).value.clone() },
+                gc,
+            );
         }
     }
 

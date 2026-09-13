@@ -65,14 +65,14 @@ impl OpCode {
             OpCode::Divide => Some(|a, b| a / b),
             OpCode::Greater => Some(|a, b| {
                 if a.is_number() && b.is_number() {
-                    Ok(Value::from(a > b))
+                    Ok(Value::Bool(a > b))
                 } else {
                     Err("Operands must be numbers.".into())
                 }
             }),
             OpCode::Less => Some(|a, b| {
                 if a.is_number() && b.is_number() {
-                    Ok(Value::from(a < b))
+                    Ok(Value::Bool(a < b))
                 } else {
                     Err("Operands must be numbers.".into())
                 }

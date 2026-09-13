@@ -624,7 +624,7 @@ impl<'src> Parser<'src> {
     fn number(&mut self, _can_assign: bool) {
         let value = self.previous.lexeme;
         let value: f64 = value.parse().unwrap();
-        self.emit_constant(Value::from(value));
+        self.emit_constant(Value::Number(value));
     }
 
     fn grouping(&mut self, _can_assign: bool) {

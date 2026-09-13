@@ -84,11 +84,11 @@ fn allocate_string(
         (*obj_string).hash = hash;
 
         stack.push(Value::from(obj_string));
-        (*strings).set(obj_string, Value::from(()), vm);
+        (*strings).set(obj_string, Value::Nil, vm);
         stack.pop();
 
         if (*strings).get(obj_string).is_none() {
-            (*strings).set(obj_string, Value::from(()), vm);
+            (*strings).set(obj_string, Value::Nil, vm);
         }
     }
 

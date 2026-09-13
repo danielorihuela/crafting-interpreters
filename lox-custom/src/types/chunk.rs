@@ -172,12 +172,12 @@ mod tests {
         let mut chunk = Chunk::default();
         let mut stack = Stack::default();
 
-        let index = chunk.add_constant(Value::from(42.0), &mut stack, &mut vm);
+        let index = chunk.add_constant(Value::Number(42.0), &mut stack, &mut vm);
         assert_eq!(index, 0);
-        assert_eq!(chunk.values[0], Value::from(42.0));
+        assert_eq!(chunk.values[0], Value::Number(42.0));
 
-        let index = chunk.add_constant(Value::from(84.0), &mut stack, &mut vm);
+        let index = chunk.add_constant(Value::Number(84.0), &mut stack, &mut vm);
         assert_eq!(index, 1);
-        assert_eq!(chunk.values[1], Value::from(84.0));
+        assert_eq!(chunk.values[1], Value::Number(84.0));
     }
 }

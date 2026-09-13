@@ -210,20 +210,20 @@ impl VM {
                             return InterpretResult::RuntimeError;
                         }
                         let value = self.stack.pop();
-                        self.stack.push(Value::from(-value.as_number()));
+                        self.stack.push(Value::Number(-value.as_number()));
                     }
                     OpCode::Not => {
                         let value = self.stack.pop();
-                        self.stack.push(Value::from(value.is_falsey()));
+                        self.stack.push(Value::Bool(value.is_falsey()));
                     }
                     OpCode::Equal => {
                         let b = self.stack.pop();
                         let a = self.stack.pop();
-                        self.stack.push(Value::from(a == b));
+                        self.stack.push(Value::Bool(a == b));
                     }
-                    OpCode::False => self.stack.push(Value::from(false)),
-                    OpCode::True => self.stack.push(Value::from(true)),
-                    OpCode::Nil => self.stack.push(Value::from(())),
+                    OpCode::False => self.stack.push(Value::Bool(false)),
+                    OpCode::True => self.stack.push(Value::Bool(true)),
+                    OpCode::Nil => self.stack.push(Value::Nil),
                     OpCode::Return => {
                         let result = self.stack.pop();
                         close_upvalues(&mut self.open_upvalues, (*frame).slots);
@@ -746,7 +746,7 @@ fn clock_native(_: usize, _: *mut Value) -> Value {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs_f64();
-    Value::from(elapsed)
+    Value::Number(elapsed)
 }
 
 fn capture_upvalue(local: *mut Value, vm: &mut VM) -> *mut ObjUpvalue {
