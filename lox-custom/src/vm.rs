@@ -1,10 +1,16 @@
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    collections::HashMap,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use crate::{
     DEBUG_LOG_GC,
-    collections::{dynarray::DynArray, hashtable::HashTable, stack::Stack},
+    collections::stack::Stack,
     compiler::{Compiler, FunctionType, Parser},
-    memory::gc::{GcCollector, GcContext},
+    memory::{
+        gc::{GcCollector, GcContext},
+        heap::{Heap, ObjId},
+    },
     scanner::Scanner,
     types::{
         opcode::OpCode,
@@ -12,10 +18,9 @@ use crate::{
             Value,
             class::{ObjBoundMethod, ObjClass, ObjInstance},
             closure::ObjClosure,
-            function::ObjFunction,
             native::{NativeFn, ObjNative},
-            obj::{Obj, ObjType, free_object},
-            string::{ObjString, copy_string},
+            obj::{HeapObj, Obj},
+            string::ObjString,
             upvalue::ObjUpvalue,
         },
     },
@@ -23,23 +28,26 @@ use crate::{
 
 pub const FRAMES_MAX: usize = 64;
 
+pub type StringsTable = HashMap<String, ObjId>;
+pub type GlobalsTable = HashMap<ObjId, Value>;
+
 pub struct VM {
+    pub heap: Heap,
+    pub stack: Stack<Value>,
+    pub strings: StringsTable,
+
     pub frames: [CallFrame; FRAMES_MAX],
     pub frame_count: u8,
 
-    pub stack: Stack<Value>,
-    pub open_upvalues: *mut ObjUpvalue,
+    pub open_upvalues: ObjId,
     pub compiler: *mut Compiler,
-    pub objects: *mut Obj,
-    pub strings: HashTable,
-    pub globals: HashTable,
-
-    pub gray_stack: DynArray<*mut Obj>,
+    pub globals: GlobalsTable,
+    gray_stack: Vec<ObjId>,
 
     pub bytes_allocated: usize,
     pub next_gc: usize,
 
-    pub init_string: *mut ObjString,
+    pub init_string: ObjId,
 
     #[cfg(test)]
     output: Vec<String>,
@@ -48,34 +56,29 @@ pub struct VM {
 impl VM {
     pub fn new() -> Self {
         let call_frame = CallFrame {
-            closure: std::ptr::null_mut(),
+            closure: ObjId::null(),
             ip: std::ptr::null_mut(),
             slots: std::ptr::null_mut(),
         };
 
         let mut vm = VM {
+            heap: Heap::new(),
+            stack: Stack::default(),
+            strings: StringsTable::new(),
             frames: [(); FRAMES_MAX].map(|_| call_frame.clone()),
             frame_count: 0,
-            stack: Stack::default(),
-            open_upvalues: std::ptr::null_mut(),
+            open_upvalues: ObjId::null(),
             compiler: std::ptr::null_mut(),
-            objects: std::ptr::null_mut(),
-            strings: HashTable::new(),
-            globals: HashTable::new(),
-
-            gray_stack: DynArray::default(),
-
+            globals: GlobalsTable::new(),
+            gray_stack: Vec::new(),
             bytes_allocated: 0,
             next_gc: 1024 * 1024,
-
-            init_string: std::ptr::null_mut(),
-
+            init_string: ObjId::null(),
             #[cfg(test)]
             output: Vec::new(),
         };
 
-        vm.init_string = copy_string("init", &mut vm.objects, &mut vm.strings, &mut vm);
-
+        vm.init_string = ObjString::new(&mut vm, "init");
         vm.define_native("clock", clock_native);
 
         vm
@@ -83,537 +86,640 @@ impl VM {
 
     pub fn interpret(&mut self, source: &str) -> InterpretResult {
         let scanner = &mut Scanner::new(source);
-        let mut compiler = Compiler::new(
-            FunctionType::Script,
-            &mut self.objects,
-            &mut self.strings,
-            std::ptr::null_mut(),
-            "",
-            self,
-        );
-
+        let mut compiler = Compiler::new(FunctionType::Script, std::ptr::null_mut(), "", self);
         self.compiler = &mut compiler;
 
-        let parser = &mut Parser::new(
-            scanner,
-            self.compiler,
-            &mut self.objects,
-            &mut self.strings,
-            &mut self.stack,
-            self,
-        );
+        let parser = &mut Parser::new(scanner, self.compiler, self);
+        let function_id = parser.compile();
 
-        let function = parser.compile();
-
-        if function.is_null() {
+        if function_id.is_null() {
             return InterpretResult::CompileError;
         }
 
-        self.stack.push(Value::from(function));
-
-        let closure = ObjClosure::new(&mut self.objects, function, self);
+        self.stack.push(Value::Obj(Obj::Function(function_id)));
+        let closure_id = ObjClosure::new(function_id, self);
         self.stack.pop();
-        self.stack.push(Value::from(closure));
+        self.stack.push(Value::Obj(Obj::Closure(closure_id)));
 
-        self.call(closure, 0);
-
+        self.call(closure_id, 0);
         self.run()
     }
 
-    #[allow(unused_unsafe)]
     fn run(&mut self) -> InterpretResult {
         #[cfg(debug_assertions)]
         {
             println!("\n=== Running bytecode ===");
         }
 
-        let mut frame: *mut CallFrame = &mut self.frames[self.frame_count as usize - 1];
-
         loop {
+            let frame_index = self.current_frame_index();
+
             #[cfg(debug_assertions)]
             {
-                use crate::collections::stack::debug::show_stack;
-                show_stack(&self.stack);
+                print!("          ");
+                for i in 0..self.stack.len() {
+                    print!("[{}]", self.stack[i].to_string(self));
+                }
+                println!();
+
+                let frame = &self.frames[frame_index];
+                let HeapObj::Closure(closure) = &self.heap[frame.closure] else {
+                    panic!("Expected closure");
+                };
+                let HeapObj::Function(function) = &self.heap[closure.function_id] else {
+                    panic!("Expected function");
+                };
 
                 use crate::types::chunk::debug::disassemble_instruction;
-                let offset = unsafe {
-                    (*frame)
-                        .ip
-                        .offset_from((*(*(*frame).closure).function).chunk.code.data)
-                } as usize;
-                let _ = disassemble_instruction(
-                    unsafe { &(*(*(*frame).closure).function).chunk },
-                    offset,
-                );
+                let offset = unsafe { frame.ip.offset_from(function.chunk.code.data) as usize };
+                let _ = disassemble_instruction(&function.chunk, offset, self);
             }
 
-            unsafe {
-                let instruction = OpCode::from(*(*frame).ip);
-                (*frame).ip = (*frame).ip.add(1);
+            let instruction = OpCode::from(self.read_byte_from_frame(frame_index));
+            match instruction {
+                OpCode::Constant => {
+                    let position = self.read_byte_from_frame(frame_index) as usize;
 
-                match instruction {
-                    OpCode::Constant => {
-                        let position = unsafe { *(*frame).ip } as usize;
-                        (*frame).ip = unsafe { (*frame).ip.add(1) };
-
-                        let value =
-                            &unsafe { &(*(*(*frame).closure).function).chunk }.values[position];
-                        self.stack.push(value.clone());
-                    }
-                    OpCode::Add => {
-                        let b = self.stack.peek(0).clone();
-                        let a = self.stack.peek(1).clone();
-                        let result = if a.is_string() && b.is_string() {
-                            Ok(Value::from(unsafe {
-                                (*a.as_string()).add(
-                                    b.as_string(),
-                                    &mut self.objects,
-                                    &mut self.strings,
-                                    self,
-                                )
-                            }))
-                        } else {
-                            a + b
+                    let function_id = self.frame_function_id(frame_index);
+                    let value = {
+                        let HeapObj::Function(function) = &self.heap[function_id] else {
+                            panic!("Expected function object");
                         };
-                        self.stack.pop();
-                        self.stack.pop();
-                        match result {
-                            Ok(v) => self.stack.push(v),
+                        function.chunk.values[position].clone()
+                    };
+                    self.stack.push(value);
+                }
+                OpCode::Add => {
+                    let b = self.stack.peek(0).clone();
+                    let a = self.stack.peek(1).clone();
+                    let result = if a.is_string() && b.is_string() {
+                        let a_id = a.as_string();
+                        let a_text = {
+                            let HeapObj::String(a_str) = &self.heap[a_id] else {
+                                panic!("Expected string object");
+                            };
+                            a_str.clone()
+                        };
+                        let b_id = b.as_string();
+                        let b_text = {
+                            let HeapObj::String(b_str) = &self.heap[b_id] else {
+                                panic!("Expected string object");
+                            };
+                            b_str.clone()
+                        };
+                        Ok(Value::Obj(Obj::String(
+                            ObjString(a_text).add(self, &b_text),
+                        )))
+                    } else {
+                        a + b
+                    };
+                    self.stack.pop();
+                    self.stack.pop();
+                    match result {
+                        Ok(v) => self.stack.push(v),
+                        Err(e) => {
+                            self.runtime_error(&e.to_string());
+                            return InterpretResult::RuntimeError;
+                        }
+                    }
+                }
+                OpCode::Subtract
+                | OpCode::Multiply
+                | OpCode::Divide
+                | OpCode::Greater
+                | OpCode::Less => {
+                    if let Some(op) = instruction.maybe_binary_op() {
+                        let b = self.stack.pop();
+                        let a = self.stack.pop();
+                        match op(a, b) {
+                            Ok(result) => self.stack.push(result),
                             Err(e) => {
                                 self.runtime_error(&e.to_string());
                                 return InterpretResult::RuntimeError;
                             }
                         }
+                    } else {
+                        panic!("Unsupported binary operation");
                     }
-                    OpCode::Subtract
-                    | OpCode::Multiply
-                    | OpCode::Divide
-                    | OpCode::Greater
-                    | OpCode::Less => {
-                        if let Some(op) = instruction.maybe_binary_op() {
-                            let b = self.stack.pop();
-                            let a = self.stack.pop();
-                            match op(a, b) {
-                                Ok(result) => self.stack.push(result),
-                                Err(e) => {
-                                    self.runtime_error(&e.to_string());
-                                    return InterpretResult::RuntimeError;
-                                }
-                            }
-                        } else {
-                            panic!("Unsupported binary operation");
-                        }
+                }
+                OpCode::Negate => {
+                    if !self.stack.peek(0).is_number() {
+                        self.runtime_error("Operand must be a number.");
+                        return InterpretResult::RuntimeError;
                     }
-                    OpCode::Negate => {
-                        if !self.stack.peek(0).is_number() {
-                            self.runtime_error("Operand must be a number.");
-                            return InterpretResult::RuntimeError;
-                        }
-                        let value = self.stack.pop();
-                        self.stack.push(Value::Number(-value.as_number()));
-                    }
-                    OpCode::Not => {
-                        let value = self.stack.pop();
-                        self.stack.push(Value::Bool(value.is_falsey()));
-                    }
-                    OpCode::Equal => {
-                        let b = self.stack.pop();
-                        let a = self.stack.pop();
-                        self.stack.push(Value::Bool(a == b));
-                    }
-                    OpCode::False => self.stack.push(Value::Bool(false)),
-                    OpCode::True => self.stack.push(Value::Bool(true)),
-                    OpCode::Nil => self.stack.push(Value::Nil),
-                    OpCode::Return => {
-                        let result = self.stack.pop();
-                        close_upvalues(&mut self.open_upvalues, (*frame).slots);
-                        self.frame_count -= 1;
-                        if self.frame_count == 0 {
-                            self.stack.pop();
-                            return InterpretResult::Ok;
-                        }
-
-                        unsafe { self.stack.truncate_to_ptr((*frame).slots) };
-                        self.stack.push(result);
-                        frame = &mut self.frames[self.frame_count as usize - 1];
-                    }
-                    OpCode::Print => {
-                        let value = self.stack.pop();
-                        #[cfg(test)]
-                        self.output.push(value.to_string());
-                        println!("{}", value);
-                    }
-                    OpCode::Pop => {
+                    let value = self.stack.pop();
+                    self.stack.push(Value::Number(-value.as_number()));
+                }
+                OpCode::Not => {
+                    let value = self.stack.pop();
+                    self.stack.push(Value::Bool(value.is_falsey()));
+                }
+                OpCode::Equal => {
+                    let b = self.stack.pop();
+                    let a = self.stack.pop();
+                    self.stack.push(Value::Bool(a == b));
+                }
+                OpCode::False => self.stack.push(Value::Bool(false)),
+                OpCode::True => self.stack.push(Value::Bool(true)),
+                OpCode::Nil => self.stack.push(Value::Nil),
+                OpCode::Return => {
+                    let result = self.stack.pop();
+                    let slots = self.frames[frame_index].slots;
+                    close_upvalues(self, slots);
+                    self.frame_count -= 1;
+                    if self.frame_count == 0 {
                         self.stack.pop();
+                        return InterpretResult::Ok;
                     }
-                    OpCode::DefineGlobal => {
-                        let position = unsafe { *(*frame).ip } as usize;
-                        (*frame).ip = unsafe { (*frame).ip.add(1) };
 
-                        let name = unsafe { &(*(*(*frame).closure).function).chunk }.values
-                            [position]
-                            .as_string();
-                        self.globals_set(name, self.stack.peek(0).clone());
-                        let _ = self.stack.pop();
+                    unsafe {
+                        self.stack.truncate_to_ptr(slots);
                     }
-                    OpCode::GetGlobal => {
-                        let position = unsafe { *(*frame).ip } as usize;
-                        (*frame).ip = unsafe { (*frame).ip.add(1) };
+                    self.stack.push(result);
+                }
+                OpCode::Print => {
+                    let value = self.stack.pop();
+                    let text = value.to_string(self);
+                    #[cfg(test)]
+                    self.output.push(text.clone());
+                    println!("{}", text);
+                }
+                OpCode::Pop => {
+                    self.stack.pop();
+                }
+                OpCode::DefineGlobal => {
+                    let position = self.read_byte_from_frame(frame_index) as usize;
 
-                        let name = unsafe { &(*(*(*frame).closure).function).chunk }.values
-                            [position]
-                            .as_string();
-                        match self.globals.get(name) {
-                            Some(value) => self.stack.push(unsafe { (*value).clone() }),
-                            None => {
-                                self.runtime_error(&format!(
-                                    "Undefined variable '{}'.",
-                                    Value::from(name)
-                                ));
-                                return InterpretResult::RuntimeError;
-                            }
-                        }
-                    }
-                    OpCode::SetGlobal => {
-                        let position = unsafe { *(*frame).ip } as usize;
-                        (*frame).ip = unsafe { (*frame).ip.add(1) };
+                    let name = self.read_constant_string_id(frame_index, position);
+                    self.globals.insert(name, self.stack.peek(0).clone());
+                    self.stack.pop();
+                }
+                OpCode::GetGlobal => {
+                    let position = self.read_byte_from_frame(frame_index) as usize;
 
-                        let name = unsafe { &(*(*(*frame).closure).function).chunk }.values
-                            [position]
-                            .as_string();
-                        if self.globals_set(name, self.stack.peek(0).clone()) {
-                            self.globals.delete(name);
+                    let name = self.read_constant_string_id(frame_index, position);
+                    match self.globals.get(&name) {
+                        Some(value) => self.stack.push(value.clone()),
+                        None => {
                             self.runtime_error(&format!(
                                 "Undefined variable '{}'.",
-                                Value::from(name)
+                                self.string_text(name)
                             ));
                             return InterpretResult::RuntimeError;
+                        }
+                    }
+                }
+                OpCode::SetGlobal => {
+                    let position = self.read_byte_from_frame(frame_index) as usize;
+
+                    let name = self.read_constant_string_id(frame_index, position);
+                    if let std::collections::hash_map::Entry::Occupied(mut entry) =
+                        self.globals.entry(name)
+                    {
+                        entry.insert(self.stack.peek(0).clone());
+                    } else {
+                        self.runtime_error(&format!(
+                            "Undefined variable '{}'.",
+                            self.string_text(name)
+                        ));
+                        return InterpretResult::RuntimeError;
+                    }
+                }
+                OpCode::GetLocal => {
+                    let slot = self.read_byte_from_frame(frame_index) as usize;
+                    let slots = self.frames[frame_index].slots;
+                    unsafe {
+                        self.stack.push((*slots.add(slot)).clone());
+                    }
+                }
+                OpCode::SetLocal => {
+                    let slot = self.read_byte_from_frame(frame_index) as usize;
+                    let slots = self.frames[frame_index].slots;
+                    unsafe {
+                        *slots.add(slot) = self.stack.peek(0).clone();
+                    }
+                }
+                OpCode::JumpIfFalse => {
+                    let offset_0 = self.read_byte_from_frame(frame_index) as usize;
+                    let offset_1 = self.read_byte_from_frame(frame_index) as usize;
+                    let offset = (offset_0 << 8) | offset_1;
+
+                    if self.stack.peek(0).is_falsey() {
+                        self.advance_frame_ip(frame_index, offset);
+                    }
+                }
+                OpCode::Jump => {
+                    let offset_0 = self.read_byte_from_frame(frame_index) as usize;
+                    let offset_1 = self.read_byte_from_frame(frame_index) as usize;
+                    self.advance_frame_ip(frame_index, (offset_0 << 8) | offset_1);
+                }
+                OpCode::Loop => {
+                    let offset_0 = self.read_byte_from_frame(frame_index) as usize;
+                    let offset_1 = self.read_byte_from_frame(frame_index) as usize;
+                    self.rewind_frame_ip(frame_index, (offset_0 << 8) | offset_1);
+                }
+                OpCode::Call => {
+                    let arg_count = self.read_byte_from_frame(frame_index) as usize;
+
+                    let callee = self.stack.peek(arg_count).clone();
+                    if !self.call_value(callee, arg_count) {
+                        return InterpretResult::RuntimeError;
+                    }
+                }
+                OpCode::Closure => {
+                    let position = self.read_byte_from_frame(frame_index) as usize;
+
+                    let function_id = self.read_constant_function_id(frame_index, position);
+                    let closure_id = ObjClosure::new(function_id, self);
+                    self.stack.push(Value::Obj(Obj::Closure(closure_id)));
+
+                    let upvalue_count = {
+                        let HeapObj::Function(function) = &self.heap[function_id] else {
+                            panic!("Expected string object");
                         };
+                        function.upvalue_count
+                    };
+
+                    for i in 0..upvalue_count {
+                        let is_local = self.read_byte_from_frame(frame_index) != 0;
+
+                        let index = self.read_byte_from_frame(frame_index) as usize;
+
+                        let upvalue_id = if is_local {
+                            let slots = self.frames[frame_index].slots;
+                            let local = unsafe { slots.add(index) };
+                            capture_upvalue(local, self)
+                        } else {
+                            let parent_closure = self.frames[frame_index].closure;
+                            let HeapObj::Closure(parent) = &self.heap[parent_closure] else {
+                                panic!("Expected closure object");
+                            };
+                            parent.upvalues[index]
+                        };
+
+                        let HeapObj::Closure(closure) = &mut self.heap[closure_id] else {
+                            panic!("Expected closure object");
+                        };
+                        closure.upvalues[i] = upvalue_id;
                     }
-                    OpCode::GetLocal => {
-                        let slot = unsafe { *(*frame).ip } as usize;
-                        (*frame).ip = unsafe { (*frame).ip.add(1) };
+                }
+                OpCode::GetUpvalue => {
+                    let slot = self.read_byte_from_frame(frame_index) as usize;
 
-                        self.stack
-                            .push(unsafe { (*(*frame).slots.add(slot)).clone() });
+                    let closure_id = self.frames[frame_index].closure;
+                    let upvalue_id = {
+                        let HeapObj::Closure(closure) = &self.heap[closure_id] else {
+                            panic!("Expected closure object");
+                        };
+                        closure.upvalues[slot]
+                    };
+
+                    let value = {
+                        let HeapObj::Upvalue(upvalue) = &self.heap[upvalue_id] else {
+                            panic!("Expected upvalue object");
+                        };
+                        unsafe { (*upvalue.location).clone() }
+                    };
+                    self.stack.push(value);
+                }
+                OpCode::SetUpvalue => {
+                    let slot = self.read_byte_from_frame(frame_index) as usize;
+
+                    let closure_id = self.frames[frame_index].closure;
+                    let upvalue_id = {
+                        let HeapObj::Closure(closure) = &self.heap[closure_id] else {
+                            panic!("Expected closure object");
+                        };
+                        closure.upvalues[slot]
+                    };
+
+                    let HeapObj::Upvalue(upvalue) = &mut self.heap[upvalue_id] else {
+                        panic!("Expected upvalue object");
+                    };
+                    unsafe {
+                        *upvalue.location = self.stack.peek(0).clone();
                     }
-                    OpCode::SetLocal => {
-                        let slot = unsafe { *(*frame).ip } as usize;
-                        (*frame).ip = unsafe { (*frame).ip.add(1) };
+                }
+                OpCode::CloseUpvalue => {
+                    let last = unsafe { self.stack.as_mut_ptr().add(self.stack.len() - 1) };
+                    close_upvalues(self, last);
+                    self.stack.pop();
+                }
+                OpCode::Class => {
+                    let position = self.read_byte_from_frame(frame_index) as usize;
 
-                        unsafe { *(*frame).slots.add(slot) = self.stack.peek(0).clone() };
+                    let name = self.read_constant_string_id(frame_index, position);
+                    let class_id = ObjClass::new(name, self);
+                    self.stack.push(Value::Obj(Obj::Class(class_id)));
+                }
+                OpCode::GetProperty => {
+                    if !self.stack.peek(0).is_instance() {
+                        self.runtime_error("Only instances have properties.");
+                        return InterpretResult::RuntimeError;
                     }
-                    OpCode::JumpIfFalse => {
-                        let offset_0 = unsafe { *(*frame).ip } as usize;
-                        let offset_1 = unsafe { *(*frame).ip.add(1) } as usize;
-                        (*frame).ip = unsafe { (*frame).ip.add(2) };
 
-                        let offset = (offset_0 << 8) | offset_1;
+                    let instance_id = self.stack.peek(0).as_instance();
+                    let name_position = self.read_byte_from_frame(frame_index) as usize;
 
-                        if self.stack.peek(0).is_falsey() {
-                            (*frame).ip = unsafe { (*frame).ip.add(offset) };
-                        }
-                    }
-                    OpCode::Jump => {
-                        let offset_0 = unsafe { *(*frame).ip } as usize;
-                        let offset_1 = unsafe { *(*frame).ip.add(1) } as usize;
-                        (*frame).ip = unsafe { (*frame).ip.add(2) };
+                    let name = self.read_constant_string_id(frame_index, name_position);
 
-                        let offset = (offset_0 << 8) | offset_1;
+                    let field_value = {
+                        let HeapObj::Instance(instance) = &self.heap[instance_id] else {
+                            panic!("Expected instance object");
+                        };
+                        instance.fields.get(&name).cloned()
+                    };
 
-                        (*frame).ip = unsafe { (*frame).ip.add(offset) };
-                    }
-                    OpCode::Loop => {
-                        let offset_0 = unsafe { *(*frame).ip } as usize;
-                        let offset_1 = unsafe { *(*frame).ip.add(1) } as usize;
-                        (*frame).ip = unsafe { (*frame).ip.add(2) };
-
-                        let offset = (offset_0 << 8) | offset_1;
-
-                        (*frame).ip = unsafe { (*frame).ip.sub(offset) };
-                    }
-                    OpCode::Call => {
-                        let arg_count = unsafe { *(*frame).ip } as usize;
-                        (*frame).ip = unsafe { (*frame).ip.add(1) };
-
-                        let callee = self.stack.peek(arg_count).clone();
-                        if !self.call_value(callee, arg_count) {
-                            return InterpretResult::RuntimeError;
-                        }
-                        frame = &mut self.frames[self.frame_count as usize - 1];
-                    }
-                    OpCode::Closure => {
-                        let position = unsafe { *(*frame).ip } as usize;
-                        (*frame).ip = unsafe { (*frame).ip.add(1) };
-
-                        let function = unsafe { &(*(*(*frame).closure).function).chunk }.values
-                            [position]
-                            .as_function();
-                        let closure = ObjClosure::new(&mut self.objects, function, self);
-                        self.stack.push(Value::from(closure));
-
-                        for i in 0..unsafe { (*function).upvalue_count } {
-                            let is_local = unsafe { *(*frame).ip } != 0;
-                            (*frame).ip = unsafe { (*frame).ip.add(1) };
-
-                            let index = unsafe { *(*frame).ip } as usize;
-                            (*frame).ip = unsafe { (*frame).ip.add(1) };
-
-                            if is_local {
-                                unsafe {
-                                    (*closure)
-                                        .upvalues
-                                        .add(i)
-                                        .write(capture_upvalue((*frame).slots.add(index), self));
-                                }
-                            } else {
-                                unsafe {
-                                    (*closure)
-                                        .upvalues
-                                        .add(i)
-                                        .write(*(*(*frame).closure).upvalues.add(index));
-                                }
-                            }
-                        }
-                    }
-                    OpCode::GetUpvalue => {
-                        let slot = unsafe { *(*frame).ip } as usize;
-                        (*frame).ip = unsafe { (*frame).ip.add(1) };
-
-                        let upvalue =
-                            unsafe { (*(*(*(*frame).closure).upvalues.add(slot))).location };
-                        self.stack.push(unsafe { (*upvalue).clone() });
-                    }
-                    OpCode::SetUpvalue => {
-                        let slot = unsafe { *(*frame).ip } as usize;
-                        (*frame).ip = unsafe { (*frame).ip.add(1) };
-
-                        let upvalue =
-                            unsafe { (*(*(*(*frame).closure).upvalues.add(slot))).location };
-                        unsafe { *upvalue = self.stack.peek(0).clone() };
-                    }
-                    OpCode::CloseUpvalue => {
-                        let last = unsafe { self.stack.as_mut_ptr().add(self.stack.len() - 1) };
-                        close_upvalues(&mut self.open_upvalues, last);
+                    if let Some(v) = field_value {
                         self.stack.pop();
-                    }
-                    OpCode::Class => {
-                        let position = unsafe { *(*frame).ip } as usize;
-                        (*frame).ip = unsafe { (*frame).ip.add(1) };
-
-                        let name = unsafe { &(*(*(*frame).closure).function).chunk }.values
-                            [position]
-                            .as_string();
-                        let class = ObjClass::new(&mut self.objects, name, self);
-                        self.stack.push(Value::from(class));
-                    }
-                    OpCode::GetProperty => {
-                        if !self.stack.peek(0).is_instance() {
-                            self.runtime_error("Only instances have properties.");
-                            return InterpretResult::RuntimeError;
-                        }
-
-                        let instance = self.stack.peek(0).as_instance();
-
-                        let name_position = unsafe { *(*frame).ip } as usize;
-                        (*frame).ip = unsafe { (*frame).ip.add(1) };
-
-                        let name = unsafe { &(*(*(*frame).closure).function).chunk }.values
-                            [name_position]
-                            .as_string();
-
-                        let value = unsafe { (*instance).fields.get(name) };
-                        if let Some(v) = value {
-                            self.stack.pop();
-                            self.stack.push(unsafe { (*v).clone() });
-                        } else if let Err(message) = bind_method(self, (*instance).class, name) {
+                        self.stack.push(v);
+                    } else {
+                        let class_id = {
+                            let HeapObj::Instance(instance) = &self.heap[instance_id] else {
+                                panic!("Expected instance object");
+                            };
+                            instance.class
+                        };
+                        if let Err(message) = bind_method(self, class_id, name) {
                             self.runtime_error(&message);
                             return InterpretResult::RuntimeError;
                         }
                     }
-                    OpCode::SetProperty => {
-                        if !self.stack.peek(1).is_instance() {
-                            self.runtime_error("Only instances have fields.");
-                            return InterpretResult::RuntimeError;
-                        }
-
-                        let instance = self.stack.peek(1).as_instance();
-
-                        let name_position = unsafe { *(*frame).ip } as usize;
-                        (*frame).ip = unsafe { (*frame).ip.add(1) };
-
-                        let name = unsafe { &(*(*(*frame).closure).function).chunk }.values
-                            [name_position]
-                            .as_string();
-
-                        let value = self.stack.peek(0).clone();
-                        unsafe { (*instance).fields.set(name, value.clone(), self) };
-                        self.stack.pop();
-                        self.stack.pop();
-                        self.stack.push(value);
-                    }
-                    OpCode::Method => {
-                        let name_position = unsafe { *(*frame).ip } as usize;
-                        (*frame).ip = unsafe { (*frame).ip.add(1) };
-
-                        let name = unsafe { &(*(*(*frame).closure).function).chunk }.values
-                            [name_position]
-                            .as_string();
-
-                        let class = self.stack.peek(1).as_class();
-                        let method = self.stack.peek(0).clone();
-                        unsafe { (*class).methods.set(name, method, self) };
-                        self.stack.pop();
-                    }
-                    OpCode::Invoke => {
-                        let method_position = unsafe { *(*frame).ip } as usize;
-                        (*frame).ip = unsafe { (*frame).ip.add(1) };
-                        let method = unsafe { &(*(*(*frame).closure).function).chunk }.values
-                            [method_position]
-                            .as_string();
-
-                        let arg_count = unsafe { *(*frame).ip } as usize;
-                        (*frame).ip = unsafe { (*frame).ip.add(1) };
-
-                        if !self.invoke(method, arg_count) {
-                            return InterpretResult::RuntimeError;
-                        }
-
-                        frame = &mut self.frames[self.frame_count as usize - 1];
-                    }
-                    OpCode::Inherit => {
-                        let superclass = self.stack.peek(1).clone();
-                        if !superclass.is_class() {
-                            self.runtime_error("Superclass must be a class.");
-                            return InterpretResult::RuntimeError;
-                        }
-
-                        let subclass = self.stack.peek(0).as_class();
-                        unsafe {
-                            (*subclass)
-                                .methods
-                                .add_all(&(*superclass.as_class()).methods, self);
-                        };
-                        self.stack.pop();
-                    }
-                    OpCode::GetSuper => {
-                        let name_position = unsafe { *(*frame).ip } as usize;
-                        (*frame).ip = unsafe { (*frame).ip.add(1) };
-
-                        let name = unsafe { &(*(*(*frame).closure).function).chunk }.values
-                            [name_position]
-                            .as_string();
-
-                        let superclass = self.stack.pop().as_class();
-
-                        if bind_method(self, superclass, name).is_err() {
-                            return InterpretResult::RuntimeError;
-                        }
-                    }
-                    OpCode::SuperInvoke => {
-                        let method_position = unsafe { *(*frame).ip } as usize;
-                        (*frame).ip = unsafe { (*frame).ip.add(1) };
-                        let method = unsafe { &(*(*(*frame).closure).function).chunk }.values
-                            [method_position]
-                            .as_string();
-
-                        let arg_count = unsafe { *(*frame).ip } as usize;
-                        (*frame).ip = unsafe { (*frame).ip.add(1) };
-
-                        let superclass = self.stack.pop().as_class();
-
-                        if !self.invoke_from_class(superclass, method, arg_count) {
-                            return InterpretResult::RuntimeError;
-                        }
-
-                        frame = &mut self.frames[self.frame_count as usize - 1];
-                    }
-                    OpCode::Unknown => panic!("Something went wrong running the bytecode"),
                 }
+                OpCode::SetProperty => {
+                    if !self.stack.peek(1).is_instance() {
+                        self.runtime_error("Only instances have fields.");
+                        return InterpretResult::RuntimeError;
+                    }
+
+                    let instance_id = self.stack.peek(1).as_instance();
+                    let name_position = self.read_byte_from_frame(frame_index) as usize;
+
+                    let name = self.read_constant_string_id(frame_index, name_position);
+                    let value = self.stack.peek(0).clone();
+
+                    let HeapObj::Instance(instance) = &mut self.heap[instance_id] else {
+                        panic!("Expected instance object");
+                    };
+                    instance.fields.insert(name, value.clone());
+
+                    self.stack.pop();
+                    self.stack.pop();
+                    self.stack.push(value);
+                }
+                OpCode::Method => {
+                    let name_position = self.read_byte_from_frame(frame_index) as usize;
+
+                    let name = self.read_constant_string_id(frame_index, name_position);
+                    let class_id = self.stack.peek(1).as_class();
+                    let method = self.stack.peek(0).clone();
+
+                    let HeapObj::Class(class) = &mut self.heap[class_id] else {
+                        panic!("Expected class object");
+                    };
+                    class.methods.insert(name, method);
+                    self.stack.pop();
+                }
+                OpCode::Invoke => {
+                    let method_position = self.read_byte_from_frame(frame_index) as usize;
+                    let method = self.read_constant_string_id(frame_index, method_position);
+
+                    let arg_count = self.read_byte_from_frame(frame_index) as usize;
+
+                    if !self.invoke(method, arg_count) {
+                        return InterpretResult::RuntimeError;
+                    }
+                }
+                OpCode::Inherit => {
+                    let superclass = self.stack.peek(1).clone();
+                    if !superclass.is_class() {
+                        self.runtime_error("Superclass must be a class.");
+                        return InterpretResult::RuntimeError;
+                    }
+
+                    let superclass_id = superclass.as_class();
+                    let subclass_id = self.stack.peek(0).as_class();
+
+                    let inherited = {
+                        let HeapObj::Class(superclass) = &self.heap[superclass_id] else {
+                            panic!("Expected class object");
+                        };
+                        superclass.methods.clone()
+                    };
+
+                    let HeapObj::Class(subclass) = &mut self.heap[subclass_id] else {
+                        panic!("Expected class object");
+                    };
+                    subclass.methods.extend(inherited);
+                    self.stack.pop();
+                }
+                OpCode::GetSuper => {
+                    let name_position = self.read_byte_from_frame(frame_index) as usize;
+
+                    let name = self.read_constant_string_id(frame_index, name_position);
+                    let superclass = self.stack.pop().as_class();
+
+                    if bind_method(self, superclass, name).is_err() {
+                        return InterpretResult::RuntimeError;
+                    }
+                }
+                OpCode::SuperInvoke => {
+                    let method_position = self.read_byte_from_frame(frame_index) as usize;
+                    let method = self.read_constant_string_id(frame_index, method_position);
+
+                    let arg_count = self.read_byte_from_frame(frame_index) as usize;
+
+                    let superclass = self.stack.pop().as_class();
+                    if !self.invoke_from_class(superclass, method, arg_count) {
+                        return InterpretResult::RuntimeError;
+                    }
+                }
+                OpCode::Unknown => panic!("Invalid opcode"),
             }
         }
     }
 
-    fn invoke(&mut self, name: *mut ObjString, arg_count: usize) -> bool {
+    fn current_frame_index(&self) -> usize {
+        self.frame_count as usize - 1
+    }
+
+    fn read_byte_from_frame(&mut self, frame_index: usize) -> u8 {
+        let ip = self.frames[frame_index].ip;
+        let byte = unsafe { *ip };
+        self.frames[frame_index].ip = unsafe { ip.add(1) };
+        byte
+    }
+
+    fn advance_frame_ip(&mut self, frame_index: usize, offset: usize) {
+        let ip = self.frames[frame_index].ip;
+        self.frames[frame_index].ip = unsafe { ip.add(offset) };
+    }
+
+    fn rewind_frame_ip(&mut self, frame_index: usize, offset: usize) {
+        let ip = self.frames[frame_index].ip;
+        self.frames[frame_index].ip = unsafe { ip.sub(offset) };
+    }
+
+    fn frame_function_id(&self, frame_index: usize) -> ObjId {
+        let closure_id = self.frames[frame_index].closure;
+        let HeapObj::Closure(closure) = &self.heap[closure_id] else {
+            panic!("Expected closure object");
+        };
+        closure.function_id
+    }
+
+    fn read_constant_string_id(&self, frame_index: usize, position: usize) -> ObjId {
+        let function_id = self.frame_function_id(frame_index);
+        let value = {
+            let HeapObj::Function(function) = &self.heap[function_id] else {
+                panic!("Expected function object");
+            };
+            function.chunk.values[position].clone()
+        };
+        value.as_string()
+    }
+
+    fn read_constant_function_id(&self, frame_index: usize, position: usize) -> ObjId {
+        let function_id = self.frame_function_id(frame_index);
+        let value = {
+            let HeapObj::Function(function) = &self.heap[function_id] else {
+                panic!("Expected function object");
+            };
+            function.chunk.values[position].clone()
+        };
+        value.as_function()
+    }
+
+    fn string_text(&self, id: ObjId) -> String {
+        let HeapObj::String(s) = &self.heap[id] else {
+            panic!("Expected string object");
+        };
+        s.clone()
+    }
+
+    fn invoke(&mut self, name: ObjId, arg_count: usize) -> bool {
         let receiver = self.stack.peek(arg_count).clone();
         if !receiver.is_instance() {
             self.runtime_error("Only instances have methods.");
             return false;
         }
 
-        let instance = receiver.as_instance();
-        if let Some(value) = unsafe { (*instance).fields.get(name) } {
+        let instance_id = receiver.as_instance();
+        let field = {
+            let HeapObj::Instance(instance) = &self.heap[instance_id] else {
+                panic!("Expected instance object");
+            };
+            instance.fields.get(&name).cloned()
+        };
+
+        if let Some(value) = field {
             let stack_len = self.stack.len();
-            self.stack[stack_len - arg_count - 1] = unsafe { (*value).clone() };
-            return self.call_value(unsafe { (*value).clone() }, arg_count);
+            self.stack[stack_len - arg_count - 1] = value.clone();
+            return self.call_value(value, arg_count);
         }
 
-        self.invoke_from_class(unsafe { (*instance).class }, name, arg_count)
+        let class_id = {
+            let HeapObj::Instance(instance) = &self.heap[instance_id] else {
+                panic!("Expected instance object");
+            };
+            instance.class
+        };
+
+        self.invoke_from_class(class_id, name, arg_count)
     }
 
-    fn invoke_from_class(
-        &mut self,
-        class: *mut ObjClass,
-        name: *mut ObjString,
-        arg_count: usize,
-    ) -> bool {
-        let method = unsafe { (*class).methods.get(name) };
-        if let Some(m) = method {
-            return self.call(unsafe { (*m).as_closure() }, arg_count);
+    fn invoke_from_class(&mut self, class_id: ObjId, name: ObjId, arg_count: usize) -> bool {
+        let method = {
+            let HeapObj::Class(class) = &self.heap[class_id] else {
+                panic!("Expected class object");
+            };
+            class.methods.get(&name).cloned()
+        };
+
+        if let Some(value) = method {
+            return self.call(value.as_closure(), arg_count);
         }
 
-        self.runtime_error(&format!("Undefined property '{}'.", Value::from(name)));
+        self.runtime_error(&format!("Undefined property '{}'.", self.string_text(name)));
         false
     }
 
     fn call_value(&mut self, callee: Value, arg_count: usize) -> bool {
         if callee.is_function() {
-            unreachable!("eventhing is wrapper up in a closure")
+            unreachable!("Functions are always wrapped in closures")
         } else if callee.is_class() {
-            let class = callee.as_class();
-            let instance = Value::from(ObjInstance::new(&mut self.objects, class, self));
+            let class_id = callee.as_class();
+            let instance = Value::Obj(Obj::Instance(ObjInstance::new(class_id, self)));
             let stack_len = self.stack.len();
-            unsafe {
-                *self.stack.as_mut_ptr().add(stack_len - arg_count - 1) = instance.clone();
-            }
+            self.stack[stack_len - arg_count - 1] = instance;
 
-            if let Some(initializer) = unsafe { (*class).methods.get(self.init_string) } {
-                return self.call(unsafe { (*initializer).as_closure() }, arg_count);
-            } else if arg_count != 0 {
+            let initializer = {
+                let HeapObj::Class(class) = &self.heap[class_id] else {
+                    panic!("Expected class object");
+                };
+                class.methods.get(&self.init_string).cloned()
+            };
+
+            if let Some(initializer) = initializer {
+                return self.call(initializer.as_closure(), arg_count);
+            }
+            if arg_count != 0 {
                 self.runtime_error(&format!("Expected 0 arguments but got {}.", arg_count));
                 return false;
             }
-
-            return true;
+            true
         } else if callee.is_native() {
-            let native = callee.as_native();
+            let native_id = callee.as_native();
+            let function = {
+                let HeapObj::Native(native) = &self.heap[native_id] else {
+                    panic!("Expected native object");
+                };
+                native.function
+            };
             let stack_base = self.stack.len() - arg_count;
             let args = unsafe { self.stack.as_mut_ptr().add(stack_base) };
-            let result = unsafe { (*native).function }(arg_count, args);
+            let result = function(arg_count, args);
             self.stack.truncate(stack_base - 1);
             self.stack.push(result);
-            return true;
+            true
         } else if callee.is_closure() {
-            let closure = callee.as_closure();
-            return self.call(closure, arg_count);
+            self.call(callee.as_closure(), arg_count)
         } else if callee.is_bound_method() {
-            let bound_method = callee.as_bound_method();
-            let method = unsafe { (*bound_method).method };
+            let bm_id = callee.as_bound_method();
+            let (receiver, method) = {
+                let HeapObj::BoundMethod(bound_method) = &self.heap[bm_id] else {
+                    panic!("Expected bound method object");
+                };
+                (bound_method.receiver.clone(), bound_method.method)
+            };
             let stack_len = self.stack.len();
-            self.stack[stack_len - arg_count - 1] = unsafe { (*bound_method).receiver.clone() };
-            return self.call(method, arg_count);
+            self.stack[stack_len - arg_count - 1] = receiver;
+            self.call(method, arg_count)
+        } else {
+            self.runtime_error("Can only call functions and classes.");
+            false
         }
-
-        self.runtime_error("Can only call functions and classes.");
-        false
     }
 
-    fn call(&mut self, closure: *mut ObjClosure, arg_count: usize) -> bool {
-        if arg_count != unsafe { (*(*closure).function).arity } {
+    fn call(&mut self, closure_id: ObjId, arg_count: usize) -> bool {
+        let function_id = {
+            let HeapObj::Closure(closure) = &self.heap[closure_id] else {
+                panic!("Expected closure object");
+            };
+            closure.function_id
+        };
+
+        let arity = {
+            let HeapObj::Function(function) = &self.heap[function_id] else {
+                panic!("Expected function object");
+            };
+            function.arity
+        };
+
+        if arg_count != arity {
             self.runtime_error(&format!(
                 "Expected {} arguments but got {}.",
-                unsafe { (*(*closure).function).arity },
-                arg_count
+                arity, arg_count
             ));
             return false;
         }
@@ -623,11 +729,17 @@ impl VM {
             return false;
         }
 
+        let ip = {
+            let HeapObj::Function(function) = &mut self.heap[function_id] else {
+                panic!("Expected function object");
+            };
+            function.chunk.code.data
+        };
+
         let frame = &mut self.frames[self.frame_count as usize];
         self.frame_count += 1;
-
-        frame.closure = closure;
-        frame.ip = unsafe { (*(*closure).function).chunk.code.data };
+        frame.closure = closure_id;
+        frame.ip = ip;
         let stack_base = self.stack.len() - arg_count - 1;
         frame.slots = unsafe { self.stack.as_mut_ptr().add(stack_base) };
 
@@ -640,104 +752,158 @@ impl VM {
     }
 
     pub fn free(&mut self) {
-        self.init_string = std::ptr::null_mut();
-
-        let mut object = self.objects;
-        while !object.is_null() {
-            let next = unsafe { (*object).next.0 };
-            unsafe { free_object(object, self) };
-            object = next;
-        }
-
-        self.objects = std::ptr::null_mut();
-
-        self.strings_free();
-        self.globals_free();
+        self.reset_stack();
+        self.globals.clear();
+        self.strings.clear();
+        self.heap.clear();
+        self.compiler = std::ptr::null_mut();
+        self.init_string = ObjId::null();
     }
 
     fn runtime_error(&mut self, message: &str) {
-        eprintln!("{message}");
+        eprintln!("{}", message);
 
         for i in (0..self.frame_count).rev() {
             let frame = &self.frames[i as usize];
-            let function = unsafe { (*frame.closure).function };
+            let function_id = {
+                let HeapObj::Closure(closure) = &self.heap[frame.closure] else {
+                    break;
+                };
+                closure.function_id
+            };
+            let HeapObj::Function(function) = &self.heap[function_id] else {
+                break;
+            };
+
             let instruction =
-                unsafe { frame.ip.offset_from_unsigned((*function).chunk.code.data) - 1 };
-            let line = unsafe { (&(*function).chunk.lines)[instruction] };
-            eprintln!(
-                "[line {line}] in {}",
-                if unsafe { (*function).name }.is_null() {
-                    "script".to_string()
-                } else {
-                    unsafe { Value::from((*function).name).to_string() }
-                }
-            );
+                unsafe { frame.ip.offset_from_unsigned(function.chunk.code.data) - 1 };
+            let line = function.chunk.lines[instruction];
+            let where_ = if function.name.is_null() {
+                "script".to_string()
+            } else {
+                self.string_text(function.name)
+            };
+            eprintln!("[line {}] in {}", line, where_);
         }
 
         self.reset_stack();
     }
 
     fn reset_stack(&mut self) {
-        self.stack = Stack::default();
+        self.stack = crate::collections::stack::Stack::default();
         self.frame_count = 0;
-        self.open_upvalues = std::ptr::null_mut();
+        self.open_upvalues = ObjId::null();
+        self.gray_stack.clear();
     }
 
     fn define_native(&mut self, name: &str, function: NativeFn) {
-        let name = Value::from(ObjString::new(
-            name,
-            &mut self.objects,
-            &mut self.strings,
-            self,
-        ));
-        self.stack.push(name);
-
-        let native = Value::from(ObjNative::new(function, &mut self.objects, self));
-        self.stack.push(native);
-
-        self.globals_set(self.stack.peek(1).as_string(), self.stack.peek(0).clone());
-
-        self.stack.pop();
-        self.stack.pop();
-    }
-
-    fn globals_set(&mut self, key: *mut ObjString, value: Value) -> bool {
-        let mut globals = std::mem::replace(&mut self.globals, HashTable::new());
-        let is_new = globals.set(key, value, self);
-        self.globals = globals;
-        is_new
-    }
-
-    fn strings_free(&mut self) {
-        let mut strings = std::mem::replace(&mut self.strings, HashTable::new());
-        strings.free(self);
-        self.strings = strings;
-    }
-
-    fn globals_free(&mut self) {
-        let mut globals = std::mem::replace(&mut self.globals, HashTable::new());
-        globals.free(self);
-        self.globals = globals;
-    }
-
-    fn gray_stack_push_no_gc(&mut self, object: *mut Obj) {
-        let mut gray_stack = std::mem::take(&mut self.gray_stack);
-        gray_stack.write_no_gc(object, self);
-        self.gray_stack = gray_stack;
+        let name_id = ObjString::new(self, name);
+        let native_id = ObjNative::new(self, function);
+        self.globals
+            .insert(name_id, Value::Obj(Obj::Native(native_id)));
     }
 }
 
-fn bind_method(vm: &mut VM, class: *mut ObjClass, name: *mut ObjString) -> Result<(), String> {
-    let method = unsafe { (*class).methods.get(name) };
+fn bind_method(vm: &mut VM, class_id: ObjId, name: ObjId) -> Result<(), String> {
+    let method = {
+        let HeapObj::Class(class) = &vm.heap[class_id] else {
+            panic!("Expected class object");
+        };
+        class.methods.get(&name).cloned()
+    };
+
     if let Some(m) = method {
         let receiver = vm.stack.peek(0).clone();
-        let objects = std::ptr::addr_of_mut!(vm.objects);
-        let bound_method = ObjBoundMethod::new(objects, receiver, unsafe { (*m).as_closure() }, vm);
+        let bound_method = ObjBoundMethod::new(receiver, m.as_closure(), vm);
         vm.stack.pop();
-        vm.stack.push(Value::from(bound_method));
+        vm.stack.push(Value::Obj(Obj::BoundMethod(bound_method)));
         Ok(())
     } else {
-        Err(format!("Undefined property '{}'.", Value::from(name)))
+        Err(format!("Undefined property '{}'.", vm.string_text(name)))
+    }
+}
+
+fn capture_upvalue(local: *mut Value, vm: &mut VM) -> ObjId {
+    let mut prev = ObjId::null();
+    let mut curr = vm.open_upvalues;
+
+    while !curr.is_null() {
+        let curr_location = {
+            let HeapObj::Upvalue(upvalue) = &vm.heap[curr] else {
+                panic!("Expected upvalue object");
+            };
+            upvalue.location
+        };
+
+        if curr_location <= local {
+            break;
+        }
+
+        prev = curr;
+        let next = {
+            let HeapObj::Upvalue(upvalue) = &vm.heap[curr] else {
+                panic!("Expected upvalue object");
+            };
+            upvalue.next
+        };
+        curr = next;
+    }
+
+    if !curr.is_null() {
+        let existing_location = {
+            let HeapObj::Upvalue(upvalue) = &vm.heap[curr] else {
+                panic!("Expected upvalue object");
+            };
+            upvalue.location
+        };
+
+        if existing_location == local {
+            return curr;
+        }
+    }
+
+    let created = ObjUpvalue::new(local, vm);
+    {
+        let HeapObj::Upvalue(upvalue) = &mut vm.heap[created] else {
+            panic!("Expected upvalue object");
+        };
+        upvalue.next = curr;
+    }
+
+    if prev.is_null() {
+        vm.open_upvalues = created;
+    } else {
+        let HeapObj::Upvalue(prev_upvalue) = &mut vm.heap[prev] else {
+            panic!("Expected upvalue object");
+        };
+        prev_upvalue.next = created;
+    }
+
+    created
+}
+
+fn close_upvalues(vm: &mut VM, last: *mut Value) {
+    while !vm.open_upvalues.is_null() {
+        let curr = vm.open_upvalues;
+        let location = {
+            let HeapObj::Upvalue(upvalue) = &vm.heap[curr] else {
+                panic!("Expected upvalue object");
+            };
+            upvalue.location
+        };
+
+        if location < last {
+            break;
+        }
+
+        {
+            let HeapObj::Upvalue(upvalue) = &mut vm.heap[curr] else {
+                panic!("Expected upvalue object");
+            };
+            upvalue.closed = unsafe { (*location).clone() };
+            upvalue.location = std::ptr::addr_of_mut!(upvalue.closed);
+            vm.open_upvalues = upvalue.next;
+        }
     }
 }
 
@@ -747,41 +913,6 @@ fn clock_native(_: usize, _: *mut Value) -> Value {
         .unwrap_or_default()
         .as_secs_f64();
     Value::Number(elapsed)
-}
-
-fn capture_upvalue(local: *mut Value, vm: &mut VM) -> *mut ObjUpvalue {
-    let upvalue = std::ptr::addr_of_mut!(vm.open_upvalues);
-    let mut prev_upvalue = std::ptr::null_mut();
-    let mut curr_upvalue = unsafe { *upvalue };
-    while !curr_upvalue.is_null() && unsafe { (*curr_upvalue).location } > local {
-        prev_upvalue = curr_upvalue;
-        curr_upvalue = unsafe { (*curr_upvalue).next };
-    }
-
-    if !curr_upvalue.is_null() && unsafe { (*curr_upvalue).location } == local {
-        return curr_upvalue;
-    }
-
-    let objects = std::ptr::addr_of_mut!(vm.objects);
-    let created_upvalue = ObjUpvalue::new(objects, local, vm);
-    unsafe { (*created_upvalue).next = curr_upvalue };
-
-    if prev_upvalue.is_null() {
-        unsafe { *upvalue = created_upvalue };
-    } else {
-        unsafe { (*prev_upvalue).next = created_upvalue };
-    }
-
-    created_upvalue
-}
-
-fn close_upvalues(upvalue: &mut *mut ObjUpvalue, last: *mut Value) {
-    while !(*upvalue).is_null() && unsafe { (**upvalue).location } >= last {
-        let curr = *upvalue;
-        unsafe { (*curr).closed = (*(*curr).location).clone() };
-        unsafe { (*curr).location = std::ptr::addr_of_mut!((*curr).closed) };
-        *upvalue = unsafe { (*curr).next };
-    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -803,7 +934,7 @@ impl InterpretResult {
 
 #[derive(Clone)]
 pub struct CallFrame {
-    pub closure: *mut ObjClosure,
+    pub closure: ObjId,
     pub ip: *mut u8,
     pub slots: *mut Value,
 }
@@ -840,13 +971,13 @@ impl VM {
         self.table_remove_white();
         self.sweep();
 
-        self.next_gc = self.bytes_allocated * 2;
+        self.next_gc = self.bytes_allocated.saturating_mul(2).max(1024 * 1024);
 
         if DEBUG_LOG_GC {
             println!("-- gc end");
             println!(
                 "   collected {} bytes (from {} to {}) next at {}",
-                before - self.bytes_allocated,
+                before.saturating_sub(self.bytes_allocated),
                 before,
                 self.bytes_allocated,
                 self.next_gc
@@ -855,161 +986,141 @@ impl VM {
     }
 
     fn mark_roots(&mut self) {
-        unsafe {
-            for i in 0..self.stack.len() {
-                let value = &mut self.stack[i].clone();
-                self.mark_value(value);
-            }
+        for i in 0..self.stack.len() {
+            let value = self.stack[i].clone();
+            self.mark_value(&value);
+        }
 
-            for i in 0..self.frame_count as usize {
-                self.mark_object(self.frames[i].closure as *mut Obj);
-            }
+        for i in 0..self.frame_count as usize {
+            self.mark_object(self.frames[i].closure);
+        }
 
-            let mut next_upvalue = self.open_upvalues;
-            while !next_upvalue.is_null() {
-                self.mark_object(next_upvalue as *mut Obj);
-                next_upvalue = (*next_upvalue).next;
-            }
+        let mut next_upvalue = self.open_upvalues;
+        while !next_upvalue.is_null() {
+            self.mark_object(next_upvalue);
 
-            for i in 0..self.globals.capacity {
-                let entry = self.globals.entries.add(i);
-                self.mark_object((*entry).key as *mut Obj);
-                self.mark_value(&mut (*entry).value);
+            let HeapObj::Upvalue(upvalue) = &self.heap[next_upvalue] else {
+                break;
+            };
+            next_upvalue = upvalue.next;
+        }
+
+        let global_roots: Vec<(ObjId, Value)> = self
+            .globals
+            .iter()
+            .map(|(key, value)| (*key, value.clone()))
+            .collect();
+        for (name, value) in global_roots {
+            self.mark_object(name);
+            self.mark_value(&value);
+        }
+
+        self.mark_compiler_roots(self.compiler);
+        self.mark_object(self.init_string);
+    }
+
+    fn mark_value(&mut self, value: &Value) {
+        if let Value::Obj(obj) = value {
+            match obj {
+                Obj::String(id)
+                | Obj::Function(id)
+                | Obj::Closure(id)
+                | Obj::Native(id)
+                | Obj::Upvalue(id)
+                | Obj::Class(id)
+                | Obj::Instance(id)
+                | Obj::BoundMethod(id) => self.mark_object(*id),
             }
-            self.mark_compiler_roots(self.compiler);
-            self.mark_object(self.init_string as *mut Obj);
         }
     }
 
-    fn mark_value(&mut self, value: &mut Value) {
-        if value.is_obj() {
-            self.mark_object(value.as_obj());
-        }
-    }
-
-    fn mark_object(&mut self, object: *mut Obj) {
-        if object.is_null() {
+    fn mark_object(&mut self, id: ObjId) {
+        if id.is_null() || !self.heap.contains(id) {
             return;
         }
-        if unsafe { (*object).is_marked } {
-            return;
-        }
 
-        if DEBUG_LOG_GC {
-            println!("{:?} mark", object);
-            println!("{:?}", Value::from(object));
-        }
-
-        unsafe {
-            (*object).is_marked = true;
-        }
-
-        self.gray_stack_push_no_gc(object);
-    }
-
-    fn mark_table(&mut self, table: &mut HashTable) {
-        for i in 0..table.capacity {
-            let entry = unsafe { table.entries.add(i) };
-            self.mark_object(unsafe { (*entry).key } as *mut Obj);
-            self.mark_value(unsafe { &mut (*entry).value });
+        if self.heap.mark(id) {
+            self.gray_stack.push(id);
         }
     }
 
     fn mark_compiler_roots(&mut self, compiler: *mut Compiler) {
         let mut curr_compiler = compiler;
         while !curr_compiler.is_null() {
-            self.mark_object(unsafe { (*curr_compiler).function } as *mut Obj);
+            let function = unsafe { (*curr_compiler).function };
+            self.mark_object(function);
             curr_compiler = unsafe { (*curr_compiler).enclosing };
         }
     }
 
     fn trace_references(&mut self) {
-        while self.gray_stack.count > 0 {
-            self.gray_stack.count -= 1;
-            let object = self.gray_stack[self.gray_stack.count];
-            self.blacken_object(object);
+        while let Some(object_id) = self.gray_stack.pop() {
+            self.blacken_object(object_id);
         }
     }
 
-    fn blacken_object(&mut self, object: *mut Obj) {
-        if DEBUG_LOG_GC {
-            println!("{:?} blacken", object);
-            println!("{:?}", Value::from(object));
+    fn blacken_object(&mut self, object_id: ObjId) {
+        let mut children = Vec::new();
+        let mut value_children = Vec::new();
+
+        match &self.heap[object_id] {
+            HeapObj::String(_) => {}
+            HeapObj::Native(_) => {}
+            HeapObj::Upvalue(upvalue) => {
+                value_children.push(upvalue.closed.clone());
+            }
+            HeapObj::Function(function) => {
+                children.push(function.name);
+                for i in 0..function.chunk.values.count {
+                    value_children.push(function.chunk.values[i].clone());
+                }
+            }
+            HeapObj::Closure(closure) => {
+                children.push(closure.function_id);
+                for upvalue in &closure.upvalues {
+                    children.push(*upvalue);
+                }
+            }
+            HeapObj::Class(class) => {
+                children.push(class.name);
+                for (name, method) in &class.methods {
+                    children.push(*name);
+                    value_children.push(method.clone());
+                }
+            }
+            HeapObj::Instance(instance) => {
+                children.push(instance.class);
+                for (name, value) in &instance.fields {
+                    children.push(*name);
+                    value_children.push(value.clone());
+                }
+            }
+            HeapObj::BoundMethod(bound_method) => {
+                value_children.push(bound_method.receiver.clone());
+                children.push(bound_method.method);
+            }
         }
 
-        match unsafe { &(*object).otype } {
-            ObjType::String => {}
-            ObjType::Native => {}
-            ObjType::Upvalue => {
-                let upvalue = object as *mut ObjUpvalue;
-                self.mark_value(unsafe { &mut (*upvalue).closed });
-            }
-            ObjType::Function => {
-                let function = object as *mut ObjFunction;
-                self.mark_object(unsafe { (*function).name } as *mut Obj);
-                for i in 0..unsafe { (*function).chunk.values.count } {
-                    self.mark_value(unsafe { &mut (&mut (*function).chunk.values)[i] });
-                }
-            }
-            ObjType::Closure => {
-                let closure = object as *mut ObjClosure;
-                self.mark_object(unsafe { (*closure).function } as *mut Obj);
-                for i in 0..unsafe { (*closure).upvalue_count } {
-                    self.mark_object(unsafe { (*closure).upvalues.add(i) } as *mut Obj);
-                }
-            }
-            ObjType::Class => {
-                let class = object as *mut ObjClass;
-                self.mark_object(unsafe { (*class).name } as *mut Obj);
-                self.mark_table(unsafe { &mut (*class).methods });
-            }
-            ObjType::Instance => {
-                let instance = object as *mut ObjInstance;
-                self.mark_object(unsafe { (*instance).class } as *mut Obj);
-                self.mark_table(unsafe { &mut (*instance).fields });
-            }
-            ObjType::BoundMethod => {
-                let bound_method = object as *mut ObjBoundMethod;
-                self.mark_value(unsafe { &mut (*bound_method).receiver });
-                self.mark_object(unsafe { (*bound_method).method } as *mut Obj);
-            }
+        for child in children {
+            self.mark_object(child);
+        }
+        for value in value_children {
+            self.mark_value(&value);
         }
     }
 
     fn table_remove_white(&mut self) {
-        unsafe {
-            let mut i = 0;
-            while i < self.strings.capacity {
-                let entry = self.strings.entries.add(i);
-                let key = (*entry).key;
-                let key_obj = key as *mut Obj;
-                if !key.is_null() && !(*key_obj).is_marked {
-                    self.strings.delete(key);
-                }
-                i += 1;
-            }
-        }
+        self.strings.retain(|_, id| self.heap.is_marked(*id));
     }
 
     fn sweep(&mut self) {
-        unsafe {
-            let mut previous = std::ptr::null_mut();
-            let mut object = self.objects;
-            while !object.is_null() {
-                if (*object).is_marked {
-                    (*object).is_marked = false;
-                    previous = object;
-                    object = (*object).next.0;
-                } else {
-                    let unreached = object;
-                    object = (*object).next.0;
-                    if !previous.is_null() {
-                        (*previous).next = object.into();
-                    } else {
-                        self.objects = object;
-                    }
-                    free_object(unreached, self);
-                }
+        let ids = self.heap.iter_ids();
+        for id in ids {
+            if self.heap.is_marked(id) {
+                self.heap.clear_mark(id);
+            } else {
+                self.heap.deallocate(id);
+                self.bytes_allocated -= std::mem::size_of::<HeapObj>();
             }
         }
     }

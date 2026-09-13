@@ -1,8 +1,4 @@
-use crate::{
-    collections::{dynarray::DynArray, stack::Stack},
-    types::value::Value,
-    vm::VM,
-};
+use crate::{collections::dynarray::DynArray, types::value::Value, vm::VM};
 
 #[derive(Default)]
 pub struct Chunk {
@@ -17,10 +13,10 @@ impl Chunk {
         self.lines.write(line, vm);
     }
 
-    pub fn add_constant(&mut self, value: Value, stack: &mut Stack<Value>, vm: &mut VM) -> usize {
-        stack.push(value.clone());
+    pub fn add_constant(&mut self, value: Value, vm: &mut VM) -> usize {
+        vm.stack.push(value.clone());
         self.values.write(value.clone(), vm);
-        stack.pop();
+        vm.stack.pop();
 
         self.values.count - 1
     }
@@ -28,21 +24,21 @@ impl Chunk {
 
 #[cfg(debug_assertions)]
 pub mod debug {
-    use crate::types::opcode::OpCode;
+    use crate::types::{opcode::OpCode, value::obj::HeapObj};
 
     use super::*;
 
     impl Chunk {
-        pub fn disassemble(&self, name: &str) {
+        pub fn disassemble(&self, name: &str, vm: &VM) {
             println!("== {name} ==");
             let mut offset = 0;
             while offset != self.code.count {
-                offset = disassemble_instruction(self, offset);
+                offset = disassemble_instruction(self, offset, vm);
             }
         }
     }
 
-    pub fn disassemble_instruction(chunk: &Chunk, offset: usize) -> usize {
+    pub fn disassemble_instruction(chunk: &Chunk, offset: usize, vm: &VM) -> usize {
         print!("{offset:04} ");
         print_line_number(chunk, offset);
 
@@ -50,7 +46,7 @@ pub mod debug {
         let opcode = OpCode::from(instruction);
         match opcode {
             OpCode::Constant => {
-                print_constant_instructions(chunk, offset, opcode);
+                print_constant_instructions(chunk, offset, opcode, vm);
                 offset + 2
             }
             OpCode::DefineGlobal
@@ -61,7 +57,7 @@ pub mod debug {
             | OpCode::SetProperty
             | OpCode::GetSuper
             | OpCode::Method => {
-                print_constant_instructions(chunk, offset, opcode);
+                print_constant_instructions(chunk, offset, opcode, vm);
                 offset + 2
             }
             OpCode::GetLocal
@@ -88,10 +84,17 @@ pub mod debug {
                 curr_offset += 1;
                 let constant = unsafe { *(chunk.code.data).add(curr_offset) };
                 let value = &chunk.values[constant as usize];
-                println!("{:<16} {constant:4} '{value}'", opcode.to_string());
+                println!(
+                    "{:<16} {constant:4} '{}'",
+                    opcode.to_string(),
+                    value.to_string(vm)
+                );
 
                 let function = value.as_function();
-                for _ in 0..unsafe { (*function).upvalue_count } {
+                let HeapObj::Function(function) = &vm.heap[function] else {
+                    panic!("Expected a function object");
+                };
+                for _ in 0..function.upvalue_count {
                     curr_offset += 1;
                     let is_local = chunk.code[curr_offset];
                     curr_offset += 1;
@@ -111,8 +114,9 @@ pub mod debug {
                 let value = &chunk.values[constant as usize];
                 let arg_count = chunk.code[offset + 2];
                 println!(
-                    "{:<16} ({arg_count:4}) {constant:4} '{value}'",
-                    opcode.to_string()
+                    "{:<16} ({arg_count:4}) {constant:4} '{}'",
+                    opcode.to_string(),
+                    value.to_string(vm)
                 );
                 offset + 3
             }
@@ -135,10 +139,14 @@ pub mod debug {
         }
     }
 
-    fn print_constant_instructions(chunk: &Chunk, offset: usize, opcode: OpCode) {
+    fn print_constant_instructions(chunk: &Chunk, offset: usize, opcode: OpCode, vm: &VM) {
         let constant = unsafe { *(chunk.code.data).add(offset + 1) };
         let value = &chunk.values[constant as usize];
-        println!("{:<16} {constant:4} '{value}'", opcode.to_string());
+        println!(
+            "{:<16} {constant:4} '{}'",
+            opcode.to_string(),
+            value.to_string(vm)
+        );
     }
 }
 
@@ -170,13 +178,12 @@ mod tests {
         let mut vm = VM::new();
 
         let mut chunk = Chunk::default();
-        let mut stack = Stack::default();
 
-        let index = chunk.add_constant(Value::Number(42.0), &mut stack, &mut vm);
+        let index = chunk.add_constant(Value::Number(42.0), &mut vm);
         assert_eq!(index, 0);
         assert_eq!(chunk.values[0], Value::Number(42.0));
 
-        let index = chunk.add_constant(Value::Number(84.0), &mut stack, &mut vm);
+        let index = chunk.add_constant(Value::Number(84.0), &mut vm);
         assert_eq!(index, 1);
         assert_eq!(chunk.values[1], Value::Number(84.0));
     }

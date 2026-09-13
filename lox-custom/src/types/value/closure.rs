@@ -1,70 +1,35 @@
-use crate::{
-    memory::array::grow_array,
-    types::value::{
-        ObjPtrTarget,
-        function::ObjFunction,
-        obj::{Obj, ObjType, allocate_object},
-        upvalue::ObjUpvalue,
-    },
-    vm::VM,
-};
-use std::fmt::Display;
+use crate::{memory::heap::ObjId, types::value::obj::HeapObj, vm::VM};
 
-#[repr(C)]
 pub struct ObjClosure {
-    obj: Obj,
-    pub function: *mut ObjFunction,
-    pub upvalues: *mut *mut ObjUpvalue,
-    pub upvalue_count: usize,
-}
-
-impl ObjPtrTarget for ObjClosure {}
-
-impl Display for ObjClosure {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.function.is_null() {
-            write!(f, "<script>")
-        } else {
-            let function = unsafe { &*self.function };
-            write!(f, "{}", function)
-        }
-    }
+    pub function_id: ObjId,
+    pub upvalues: Vec<ObjId>,
 }
 
 impl ObjClosure {
-    pub fn new(objects: *mut *mut Obj, function: *mut ObjFunction, vm: &mut VM) -> *mut ObjClosure {
-        let count = unsafe { (*function).upvalue_count };
-
-        let upvalues = std::ptr::null_mut::<*mut ObjUpvalue>();
-        if count == 0 {
-            return allocate_closure(objects, function, upvalues, vm);
+    pub fn new(function_id: ObjId, vm: &mut VM) -> ObjId {
+        vm.bytes_allocated += std::mem::size_of::<HeapObj>();
+        if vm.bytes_allocated > vm.next_gc {
+            vm.garbage_collect();
         }
 
-        let upvalues = grow_array(upvalues, 0, count, vm);
+        let HeapObj::Function(function) = &vm.heap[function_id] else {
+            panic!("Expected a function object");
+        };
+        let upvalues = vec![ObjId::null(); function.upvalue_count];
+        vm.heap.allocate(HeapObj::Closure(ObjClosure {
+            function_id,
+            upvalues,
+        }))
+    }
 
-        for i in 0..count {
-            unsafe {
-                upvalues.add(i).write(std::ptr::null_mut());
-            }
+    pub fn to_string(&self, vm: &VM) -> String {
+        if self.function_id.is_null() {
+            "<script>".to_string()
+        } else {
+            let HeapObj::Function(function) = &vm.heap[self.function_id] else {
+                panic!("Expected a function object");
+            };
+            format!("{}", function.to_string(vm))
         }
-
-        allocate_closure(objects, function, upvalues, vm)
     }
-}
-
-fn allocate_closure(
-    objects: *mut *mut Obj,
-    function: *mut ObjFunction,
-    upvalues: *mut *mut ObjUpvalue,
-    vm: &mut VM,
-) -> *mut ObjClosure {
-    let closure = allocate_object::<ObjClosure>(ObjType::Closure, objects, vm);
-
-    unsafe {
-        (*closure).function = function;
-        (*closure).upvalues = upvalues;
-        (*closure).upvalue_count = (*function).upvalue_count;
-    }
-
-    closure
 }

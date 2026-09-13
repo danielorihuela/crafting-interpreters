@@ -1,21 +1,15 @@
 use crate::{
-    types::value::{
-        ObjPtrTarget, Value,
-        obj::{Obj, ObjType, allocate_object},
-    },
+    memory::heap::ObjId,
+    types::value::{Value, obj::HeapObj},
     vm::VM,
 };
 use std::fmt::Display;
 
-#[repr(C)]
 pub struct ObjUpvalue {
-    obj: Obj,
     pub location: *mut Value,
-    pub next: *mut ObjUpvalue,
+    pub next: ObjId,
     pub closed: Value,
 }
-
-impl ObjPtrTarget for ObjUpvalue {}
 
 impl Display for ObjUpvalue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -24,19 +18,16 @@ impl Display for ObjUpvalue {
 }
 
 impl ObjUpvalue {
-    pub fn new(objects: *mut *mut Obj, slot: *mut Value, vm: &mut VM) -> *mut ObjUpvalue {
-        allocate_upvalue(objects, slot, vm)
+    pub fn new(slot: *mut Value, vm: &mut VM) -> ObjId {
+        vm.bytes_allocated += std::mem::size_of::<HeapObj>();
+        if vm.bytes_allocated > vm.next_gc {
+            vm.garbage_collect();
+        }
+
+        vm.heap.allocate(HeapObj::Upvalue(Self {
+            location: slot,
+            next: ObjId::null(),
+            closed: Value::Nil,
+        }))
     }
-}
-
-fn allocate_upvalue(objects: *mut *mut Obj, slot: *mut Value, vm: &mut VM) -> *mut ObjUpvalue {
-    let upvalue = allocate_object::<ObjUpvalue>(ObjType::Upvalue, objects, vm);
-
-    unsafe {
-        (*upvalue).location = slot;
-        (*upvalue).next = std::ptr::null_mut();
-        (*upvalue).closed = Value::Nil;
-    }
-
-    upvalue
 }

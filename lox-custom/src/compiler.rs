@@ -1,13 +1,18 @@
 use std::mem::transmute;
 
 use crate::{
-    collections::{hashtable::HashTable, stack::Stack},
+    memory::heap::ObjId,
     scanner::Scanner,
     types::{
         TokenType,
         opcode::OpCode,
         token::Token,
-        value::{Value, function::ObjFunction, obj::Obj, string::ObjString},
+        value::{
+            Value,
+            function::ObjFunction,
+            obj::{HeapObj, Obj},
+            string::ObjString,
+        },
     },
     vm::VM,
 };
@@ -21,10 +26,6 @@ pub struct Parser<'src> {
     current: Token<'src>,
     previous: Token<'src>,
 
-    objects: *mut *mut Obj,
-    strings: *mut HashTable,
-    stack: *mut Stack<Value>,
-
     vm: &'src mut VM,
 
     had_error: bool,
@@ -35,9 +36,6 @@ impl<'src> Parser<'src> {
     pub fn new(
         scanner: &'src mut Scanner<'src>,
         compiler: *mut Compiler,
-        objects: *mut *mut Obj,
-        strings: *mut HashTable,
-        stack: *mut Stack<Value>,
         vm: &'src mut VM,
     ) -> Self {
         Self {
@@ -46,16 +44,13 @@ impl<'src> Parser<'src> {
             current_class: std::ptr::null_mut(),
             current: Token::default(),
             previous: Token::default(),
-            objects,
-            strings,
-            stack,
             vm,
             had_error: false,
             panic_mode: false,
         }
     }
 
-    pub fn compile(&mut self) -> *mut ObjFunction {
+    pub fn compile(&mut self) -> ObjId {
         self.had_error = false;
         self.panic_mode = false;
 
@@ -70,7 +65,7 @@ impl<'src> Parser<'src> {
         if !self.had_error {
             function
         } else {
-            std::ptr::null_mut()
+            ObjId::null()
         }
     }
 
@@ -185,14 +180,7 @@ impl<'src> Parser<'src> {
     }
 
     fn function(&mut self, ftype: FunctionType) {
-        let compiler = Compiler::new(
-            ftype,
-            self.objects,
-            self.strings,
-            self.compiler,
-            self.previous.lexeme,
-            self.vm,
-        );
+        let compiler = Compiler::new(ftype, self.compiler, self.previous.lexeme, self.vm);
         self.compiler = Box::into_raw(Box::new(compiler));
         let curr_compiler = unsafe { &mut *self.compiler };
 
@@ -202,8 +190,14 @@ impl<'src> Parser<'src> {
 
         if self.current.ttype != TokenType::RightParen {
             loop {
-                unsafe { (*(*self.compiler).function).arity += 1 };
-                if unsafe { (*(*self.compiler).function).arity } > 255 {
+                let HeapObj::Function(function) =
+                    &mut self.vm.heap[unsafe { (*self.compiler).function }]
+                else {
+                    panic!("Expected a function object");
+                };
+
+                function.arity += 1;
+                if function.arity > 255 {
                     self.error_at_current("Can't have more than 255 parameters.");
                 }
 
@@ -221,10 +215,17 @@ impl<'src> Parser<'src> {
         self.block();
 
         let function = self.end_compiler();
-        let constant = self.make_constant(Value::from(function));
+        let constant = self.make_constant(Value::Obj(Obj::Function(function)));
         self.emit_bytes(OpCode::Closure, constant);
 
-        for i in 0..unsafe { (*function).upvalue_count } {
+        let upvalue_count = {
+            let HeapObj::Function(function) = &self.vm.heap[function] else {
+                panic!("Expected a function object");
+            };
+            function.upvalue_count
+        };
+
+        for i in 0..upvalue_count {
             let upvalue = &curr_compiler.upvalues[i];
             self.emit_byte(if upvalue.is_local { 1 } else { 0 });
             self.emit_byte(upvalue.index);
@@ -307,8 +308,8 @@ impl<'src> Parser<'src> {
     }
 
     fn identifier_constant(&mut self) -> u8 {
-        let obj_string = ObjString::new(self.previous.lexeme, self.objects, self.strings, self.vm);
-        let value = Value::from(obj_string);
+        let id = ObjString::new(self.vm, self.previous.lexeme);
+        let value = Value::Obj(Obj::String(id));
         self.make_constant(value)
     }
 
@@ -395,7 +396,7 @@ impl<'src> Parser<'src> {
     }
 
     fn while_statement(&mut self) {
-        let loop_start = unsafe { (*(*self.compiler).function).chunk.code.count };
+        let loop_start = self.current_chunk_code_count();
         self.consume(TokenType::LeftParen, "Expect '(' after 'while'.");
         self.expression();
         self.consume(TokenType::RightParen, "Expect ')' after condition.");
@@ -420,7 +421,7 @@ impl<'src> Parser<'src> {
             self.expression_statement();
         }
 
-        let mut loop_start = unsafe { (*(*self.compiler).function).chunk.code.count };
+        let mut loop_start = self.current_chunk_code_count();
         let mut exit_jump = -1;
         if !self.match_type(TokenType::Semicolon) {
             self.expression();
@@ -432,7 +433,7 @@ impl<'src> Parser<'src> {
 
         if !self.match_type(TokenType::RightParen) {
             let body_jump = self.emit_jump(OpCode::Jump);
-            let increment_start = unsafe { (*(*self.compiler).function).chunk.code.count };
+            let increment_start = self.current_chunk_code_count();
             self.expression();
             self.emit_byte(OpCode::Pop);
             self.consume(TokenType::RightParen, "Expect ')' after for clauses.");
@@ -454,7 +455,7 @@ impl<'src> Parser<'src> {
     fn emit_loop(&mut self, loop_start: usize) {
         self.emit_byte(OpCode::Loop);
 
-        let offset = unsafe { (*(*self.compiler).function).chunk.code.count - loop_start + 2 };
+        let offset = self.current_chunk_code_count() - loop_start + 2;
         if offset > u16::MAX as usize {
             self.error("Loop body too large.");
         }
@@ -468,19 +469,21 @@ impl<'src> Parser<'src> {
         self.emit_byte(0xff);
         self.emit_byte(0xff);
 
-        unsafe { (*(*self.compiler).function).chunk.code.count - 2 }
+        self.current_chunk_code_count() - 2
     }
 
     fn patch_jump(&mut self, offset: usize) {
-        let jump = unsafe { (*(*self.compiler).function).chunk.code.count - offset - 2 };
+        let jump = self.current_chunk_code_count() - offset - 2;
         if jump > u16::MAX as usize {
             self.error("Too much code to jump over.");
         }
 
-        unsafe {
-            (&mut (*(*self.compiler).function).chunk.code)[offset] = ((jump >> 8) & 0xff) as u8;
-            (&mut (*(*self.compiler).function).chunk.code)[offset + 1] = (jump & 0xff) as u8;
-        }
+        let HeapObj::Function(function) = &mut self.vm.heap[unsafe { (*self.compiler).function }]
+        else {
+            panic!("Expected a function object");
+        };
+        function.chunk.code[offset] = ((jump >> 8) & 0xff) as u8;
+        function.chunk.code[offset + 1] = (jump & 0xff) as u8;
     }
 
     fn begin_scope(&mut self) {
@@ -594,20 +597,29 @@ impl<'src> Parser<'src> {
         true
     }
 
-    fn end_compiler(&mut self) -> *mut ObjFunction {
+    fn end_compiler(&mut self) -> ObjId {
         self.emit_return();
 
         #[cfg(debug_assertions)]
         {
             if !self.had_error {
-                let name = if unsafe { (*(*self.compiler).function).name.is_null() } {
-                    "script".to_string()
-                } else {
-                    let name = unsafe { (*(*self.compiler).function).name };
-                    let name = Value::from(name);
-                    name.to_string()
+                let function_id = unsafe { (*self.compiler).function };
+                let HeapObj::Function(function) = &self.vm.heap[function_id] else {
+                    panic!("Expected a function object");
                 };
-                unsafe { (*(*self.compiler).function).chunk.disassemble(&name) };
+
+                let name = {
+                    if function.name.is_null() {
+                        "script".to_string()
+                    } else {
+                        let HeapObj::String(name) = &self.vm.heap[function.name] else {
+                            panic!("Expected a string object");
+                        };
+                        name.to_string()
+                    }
+                };
+
+                function.chunk.disassemble(&name, &self.vm);
             }
         }
 
@@ -691,13 +703,11 @@ impl<'src> Parser<'src> {
     }
 
     fn string(&mut self, _can_assign: bool) {
-        let string = ObjString::new(
-            &self.previous.lexeme[1..self.previous.lexeme.len() - 1],
-            self.objects,
-            self.strings,
+        let id = ObjString::new(
             self.vm,
+            &self.previous.lexeme[1..self.previous.lexeme.len() - 1],
         );
-        let obj = Value::from(string);
+        let obj = Value::Obj(Obj::String(id));
         self.emit_constant(obj);
     }
 
@@ -749,8 +759,8 @@ impl<'src> Parser<'src> {
                 set_opcode = OpCode::SetUpvalue;
                 get_opcode = OpCode::GetUpvalue;
             } else {
-                let obj_string = ObjString::new(name.lexeme, self.objects, self.strings, self.vm);
-                arg = self.make_constant(Value::from(obj_string)) as isize;
+                let id = ObjString::new(self.vm, name.lexeme);
+                arg = self.make_constant(Value::Obj(Obj::String(id))) as isize;
                 set_opcode = OpCode::SetGlobal;
                 get_opcode = OpCode::GetGlobal;
             }
@@ -801,7 +811,7 @@ impl<'src> Parser<'src> {
         let local = resolve_local(self, enclosing, name);
         if local != -1 {
             enclosing.locals[local as usize].is_captured = true;
-            match add_upvalue(compiler, local as u8, true) {
+            match add_upvalue(compiler, self.vm, local as u8, true) {
                 Ok(index) => return index,
                 Err(message) => {
                     self.error(&message);
@@ -812,7 +822,7 @@ impl<'src> Parser<'src> {
 
         let upvalue = self.resolve_upvalue(enclosing, name);
         if upvalue != -1 {
-            match add_upvalue(compiler, upvalue as u8, false) {
+            match add_upvalue(compiler, self.vm, upvalue as u8, false) {
                 Ok(index) => return index,
                 Err(message) => {
                     self.error(&message);
@@ -967,10 +977,17 @@ impl<'src> Parser<'src> {
     }
 
     fn emit_byte(&mut self, b: impl Into<u8>) {
+        let function = unsafe { (*self.compiler).function };
+        let function_ptr = {
+            let HeapObj::Function(function) = &mut self.vm.heap[function] else {
+                panic!("Expected a function object");
+            };
+            function as *mut ObjFunction
+        };
         unsafe {
-            (*(*self.compiler).function)
+            (*function_ptr)
                 .chunk
-                .write(b.into(), self.previous.line as usize, self.vm)
+                .write(b.into(), self.previous.line as usize, self.vm);
         }
     }
 
@@ -995,11 +1012,14 @@ impl<'src> Parser<'src> {
     }
 
     fn make_constant(&mut self, value: Value) -> u8 {
-        let constant = unsafe {
-            (*(*self.compiler).function)
-                .chunk
-                .add_constant(value, &mut *self.stack, self.vm)
+        let function = unsafe { (*self.compiler).function };
+        let function_ptr = {
+            let HeapObj::Function(function) = &mut self.vm.heap[function] else {
+                panic!("Expected a function object");
+            };
+            function as *mut ObjFunction
         };
+        let constant = unsafe { (*function_ptr).chunk.add_constant(value, self.vm) };
         if constant > u8::MAX as usize {
             self.error("Too many constants in one chunk.");
             return 0;
@@ -1036,6 +1056,14 @@ impl<'src> Parser<'src> {
         eprintln!(": {message}");
         self.had_error = true;
     }
+
+    fn current_chunk_code_count(&self) -> usize {
+        let HeapObj::Function(function) = &self.vm.heap[unsafe { (*self.compiler).function }]
+        else {
+            panic!("Expected a function object");
+        };
+        function.chunk.code.count
+    }
 }
 
 fn resolve_local<'src>(
@@ -1056,25 +1084,39 @@ fn resolve_local<'src>(
     -1
 }
 
-fn add_upvalue(compiler: *mut Compiler, index: u8, is_local: bool) -> Result<isize, String> {
-    let upvalue_count = unsafe { &mut (*(*compiler).function).upvalue_count };
+fn add_upvalue(
+    compiler: *mut Compiler,
+    vm: &mut VM,
+    index: u8,
+    is_local: bool,
+) -> Result<isize, String> {
+    let function_id = unsafe { (*compiler).function };
+    let upvalue_count = {
+        let HeapObj::Function(function) = &vm.heap[function_id] else {
+            panic!("Expected a function object");
+        };
+        function.upvalue_count
+    };
 
-    for i in 0..*upvalue_count {
+    for i in 0..upvalue_count {
         let upvalue = unsafe { &(*compiler).upvalues[i] };
         if upvalue.index == index && upvalue.is_local == is_local {
             return Ok(i as isize);
         }
     }
 
-    if upvalue_count == &(u8::MAX as usize + 1) {
+    if upvalue_count == (u8::MAX as usize + 1) {
         return Err("Too many closure variables in function.".to_string());
     }
 
-    unsafe { (*compiler).upvalues[*upvalue_count].is_local = is_local };
-    unsafe { (*compiler).upvalues[*upvalue_count].index = index };
+    unsafe { (*compiler).upvalues[upvalue_count].is_local = is_local };
+    unsafe { (*compiler).upvalues[upvalue_count].index = index };
 
-    let count = unsafe { (*(*compiler).function).upvalue_count };
-    unsafe { (*(*compiler).function).upvalue_count += 1 };
+    let HeapObj::Function(function) = &mut vm.heap[function_id] else {
+        panic!("Expected a function object");
+    };
+    let count = function.upvalue_count;
+    function.upvalue_count += 1;
 
     Ok(count as isize)
 }
@@ -1118,7 +1160,7 @@ pub struct Compiler {
 
     upvalues: [Upvalue; u8::MAX as usize + 1],
 
-    pub function: *mut ObjFunction,
+    pub function: ObjId,
     ftype: FunctionType,
 
     pub enclosing: *mut Compiler,
@@ -1145,8 +1187,6 @@ pub struct Local {
 impl<'src> Compiler {
     pub fn new(
         ftype: FunctionType,
-        objects: *mut *mut Obj,
-        strings: *mut HashTable,
         enclosing: *mut Compiler,
         data: &str,
         vm: &'src mut VM,
@@ -1173,13 +1213,17 @@ impl<'src> Compiler {
                 index: 0,
                 is_local: false,
             }; u8::MAX as usize + 1],
-            function: ObjFunction::new(objects, vm),
+            function: ObjFunction::new(vm),
             ftype: ftype.clone(),
             enclosing,
         };
 
         if ftype != FunctionType::Script {
-            unsafe { (*compiler.function).name = ObjString::new(data, objects, strings, vm) }
+            let name_id = ObjString::new(vm, data);
+            let HeapObj::Function(function) = &mut vm.heap[compiler.function] else {
+                panic!("Expected a function object");
+            };
+            function.name = name_id;
         }
 
         compiler
@@ -1198,9 +1242,8 @@ pub enum FunctionType {
 mod tests {
     use super::*;
 
-    use crate::collections::hashtable::HashTable;
     use crate::types::chunk::Chunk;
-    use crate::types::value::obj::free_object;
+    use crate::types::value::obj::HeapObj;
 
     macro_rules! parse_tests {
         ($($name:ident: $value:expr,)*) => {
@@ -1209,14 +1252,10 @@ mod tests {
                 fn $name() {
                     let (input, bytes) = $value;
 
-                    let mut objects: *mut Obj = std::ptr::null_mut();
-                    let mut strings = HashTable::new();
-                    let mut stack = Stack::default();
-
                     let scanner = &mut Scanner::new(input);
                     let mut vm = VM::new();
-                    let compiler = &mut Compiler::new(FunctionType::Script, &mut objects, &mut strings, std::ptr::null_mut(), "", &mut vm);
-                    let parser = &mut Parser::new(scanner, compiler, &mut objects, &mut strings, &mut stack, &mut vm);
+                    let compiler = &mut Compiler::new(FunctionType::Script, std::ptr::null_mut(), "", &mut vm);
+                    let parser = &mut Parser::new(scanner, compiler, &mut vm);
 
                     let function = parser.compile();
 
@@ -1224,16 +1263,10 @@ mod tests {
                     for byte in bytes {
                         expected.write(byte.into(), 1, &mut vm);
                     }
-                    assert_eq!(unsafe { &(*function).chunk.code }, &expected.code);
-
-                    let mut object = objects;
-                    while !object.is_null() {
-                        let next = unsafe { (*object).next.0 };
-                        unsafe { free_object(object, &mut vm) };
-                        object = next;
-                    }
-
-                    strings.free(&mut vm);
+                    let HeapObj::Function(function_obj) = &vm.heap[function] else {
+                        panic!("Expected a function object");
+                    };
+                    assert_eq!(&function_obj.chunk.code, &expected.code);
                 }
             )*
         }

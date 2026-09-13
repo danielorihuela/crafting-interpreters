@@ -8,49 +8,29 @@ pub mod upvalue;
 
 use std::{
     error::Error,
-    fmt::{Debug, Display},
     ops::{Add, Div, Mul, Sub},
 };
 
-use crate::types::value::{
-    class::{ObjBoundMethod, ObjClass, ObjInstance},
-    closure::ObjClosure,
-    function::ObjFunction,
-    native::ObjNative,
-    obj::{Obj, ObjPtr, ObjType},
-    string::ObjString,
-};
+use crate::{memory::heap::ObjId, types::value::obj::Obj, vm::VM};
 
-trait ObjPtrTarget {}
-
-#[derive(Debug, Default, Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub enum Value {
-    #[default]
     Nil,
     Bool(bool),
     Number(f64),
 
-    // Heap values
-    Obj(*mut Obj),
+    // Heap
+    Obj(Obj),
 }
 
-impl Display for Value {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Value {
+    pub fn to_string(&self, vm: &VM) -> String {
         match self {
-            Value::Bool(b) => write!(f, "{b}"),
-            Value::Number(n) => write!(f, "{n}"),
-            Value::Nil => write!(f, "nil"),
-            Value::Obj(o) => write!(f, "{}", ObjPtr::from(*o).to_string()),
+            Value::Bool(b) => format!("{}", b),
+            Value::Number(n) => format!("{}", n),
+            Value::Nil => format!("{}", "nil"),
+            Value::Obj(o) => format!("{}", o.to_string(vm)),
         }
-    }
-}
-
-impl<T> From<*mut T> for Value
-where
-    T: ObjPtrTarget,
-{
-    fn from(value: *mut T) -> Self {
-        Self::Obj(value as *mut Obj)
     }
 }
 
@@ -87,9 +67,9 @@ impl Value {
         matches!(self, Value::Obj(_))
     }
 
-    pub fn as_obj(&self) -> *mut Obj {
+    pub fn as_obj(self) -> Obj {
         if let Value::Obj(o) = self {
-            *o
+            o
         } else {
             panic!("Called as_obj on a non-obj value");
         }
@@ -151,11 +131,15 @@ macro_rules! value_obj_accessors {
         paste::paste! {
             $(
                 pub fn [<is_ $ty:snake>](&self) -> bool {
-                    self.is_obj_type(&ObjType::$ty)
+                    matches!(self, Value::Obj(Obj::$ty(_)))
                 }
 
-                pub fn [<as_ $ty:snake>](&self) -> *mut [<Obj $ty>] {
-                    self.as_obj() as *mut [<Obj $ty>]
+                pub fn [<as_ $ty:snake>](&self) -> ObjId {
+                    if let Value::Obj(Obj::$ty(s)) = self {
+                        *s
+                    } else {
+                        panic!("Value is not a {}", stringify!($ty));
+                    }
                 }
             )+
         }
@@ -165,14 +149,6 @@ macro_rules! value_obj_accessors {
 impl Value {
     pub fn is_falsey(&self) -> bool {
         self.is_nil() || (self.is_bool() && !self.as_bool())
-    }
-
-    fn obj_type(&self) -> &ObjType {
-        &unsafe { &*self.as_obj() }.otype
-    }
-
-    pub fn is_obj_type(&self, otype: &ObjType) -> bool {
-        self.is_obj() && self.obj_type() == otype
     }
 
     value_obj_accessors!(

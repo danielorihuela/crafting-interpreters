@@ -50,8 +50,10 @@ pub mod debug {
 
         let instruction = chunk.code[offset];
         let opcode = OpCode::from(instruction);
+        println!("OPCODE {}", opcode);
         match opcode {
             OpCode::Constant => {
+                println!("CONSTANT");
                 print_constant_instructions(chunk, offset, opcode);
                 offset + 2
             }
@@ -63,6 +65,7 @@ pub mod debug {
             | OpCode::SetProperty
             | OpCode::GetSuper
             | OpCode::Method => {
+                println!("GLOBAL");
                 print_constant_instructions(chunk, offset, opcode);
                 offset + 2
             }
@@ -71,6 +74,7 @@ pub mod debug {
             | OpCode::Call
             | OpCode::SetUpvalue
             | OpCode::GetUpvalue => {
+                println!("LOCAL");
                 println!("{:<16} {:4}", opcode.to_string(), chunk.code[offset + 1]);
                 offset + 2
             }
@@ -123,6 +127,7 @@ pub mod debug {
                 offset + 1
             }
             _ => {
+                println!("ELSE");
                 println!("{}", opcode);
                 offset + 1
             }
@@ -138,6 +143,7 @@ pub mod debug {
     }
 
     fn print_constant_instructions(chunk: &Chunk, offset: usize, opcode: OpCode) {
+        println!("HERE 3 {}", (chunk.values).count);
         let constant = unsafe { *(chunk.code.data).add(offset + 1) };
         let value = &chunk.values[constant as usize];
         println!("{:<16} {constant:4} '{value}'", opcode.to_string());

@@ -1,126 +1,86 @@
+use std::collections::HashMap;
+
 use crate::{
-    collections::hashtable::HashTable,
-    types::value::{
-        ObjPtrTarget, Value,
-        closure::ObjClosure,
-        obj::{Obj, ObjType, allocate_object},
-        string::ObjString,
-    },
+    memory::heap::ObjId,
+    types::value::{Value, obj::HeapObj},
     vm::VM,
 };
 
-#[repr(C)]
 pub struct ObjClass {
-    obj: Obj,
-    pub name: *mut ObjString,
-    pub methods: HashTable,
+    pub name: ObjId,
+    pub methods: HashMap<ObjId, Value>,
 }
-
-impl ObjPtrTarget for ObjClass {}
-
-impl Display for ObjClass {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", unsafe { (*self.name).to_string() })
-    }
-}
-use std::fmt::Display;
 
 impl ObjClass {
-    pub fn new(objects: *mut *mut Obj, name: *mut ObjString, vm: &mut VM) -> *mut ObjClass {
-        allocate_class(objects, name, vm)
+    pub fn new(name: ObjId, vm: &mut VM) -> ObjId {
+        vm.bytes_allocated += std::mem::size_of::<HeapObj>();
+        if vm.bytes_allocated > vm.next_gc {
+            vm.garbage_collect();
+        }
+
+        vm.heap.allocate(HeapObj::Class(Self {
+            name,
+            methods: HashMap::new(),
+        }))
+    }
+
+    pub fn to_string(&self, vm: &VM) -> String {
+        let HeapObj::String(name) = &vm.heap[self.name] else {
+            panic!("Expected ObjString for class name");
+        };
+
+        name.clone()
     }
 }
 
-fn allocate_class(objects: *mut *mut Obj, name: *mut ObjString, vm: &mut VM) -> *mut ObjClass {
-    let class = allocate_object::<ObjClass>(ObjType::Class, objects, vm);
-
-    unsafe {
-        (*class).name = name;
-        (*class).methods = HashTable::new();
-    }
-
-    class
-}
-
-#[repr(C)]
 pub struct ObjInstance {
-    obj: Obj,
-    pub class: *mut ObjClass,
-    pub fields: HashTable,
-}
-
-impl ObjPtrTarget for ObjInstance {}
-
-impl Display for ObjInstance {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} instance", unsafe { (*self.class).to_string() })
-    }
+    pub class: ObjId,
+    pub fields: HashMap<ObjId, Value>,
 }
 
 impl ObjInstance {
-    pub fn new(objects: *mut *mut Obj, class: *mut ObjClass, vm: &mut VM) -> *mut ObjInstance {
-        allocate_instance(objects, class, vm)
-    }
-}
-
-fn allocate_instance(
-    objects: *mut *mut Obj,
-    class: *mut ObjClass,
-    vm: &mut VM,
-) -> *mut ObjInstance {
-    let instance = allocate_object::<ObjInstance>(ObjType::Instance, objects, vm);
-
-    unsafe {
-        (*instance).class = class;
-        (*instance).fields = HashTable::new();
-    }
-
-    instance
-}
-
-#[repr(C)]
-pub struct ObjBoundMethod {
-    obj: Obj,
-    pub receiver: Value,
-    pub method: *mut ObjClosure,
-}
-
-impl ObjPtrTarget for ObjBoundMethod {}
-
-impl Display for ObjBoundMethod {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let function = unsafe { (*self.method).function };
-        if unsafe { (*function).name.is_null() } {
-            write!(f, "<script>")
-        } else {
-            write!(f, "<fn {}>", unsafe { (*(*function).name).to_string() })
+    pub fn new(class: ObjId, vm: &mut VM) -> ObjId {
+        vm.bytes_allocated += std::mem::size_of::<HeapObj>();
+        if vm.bytes_allocated > vm.next_gc {
+            vm.garbage_collect();
         }
+
+        vm.heap.allocate(HeapObj::Instance(Self {
+            class,
+            fields: HashMap::new(),
+        }))
     }
+
+    pub fn to_string(&self, vm: &VM) -> String {
+        let HeapObj::Class(class) = &vm.heap[self.class] else {
+            panic!("Expected ObjClass for instance's class");
+        };
+
+        format!("{} instance", class.to_string(vm))
+    }
+}
+
+pub struct ObjBoundMethod {
+    pub receiver: Value,
+    pub method: ObjId,
 }
 
 impl ObjBoundMethod {
-    pub fn new(
-        objects: *mut *mut Obj,
-        receiver: Value,
-        method: *mut ObjClosure,
-        vm: &mut VM,
-    ) -> *mut ObjBoundMethod {
-        allocate_bound_method(objects, receiver, method, vm)
-    }
-}
+    pub fn new(receiver: Value, method: ObjId, vm: &mut VM) -> ObjId {
+        vm.bytes_allocated += std::mem::size_of::<HeapObj>();
+        if vm.bytes_allocated > vm.next_gc {
+            vm.garbage_collect();
+        }
 
-fn allocate_bound_method(
-    objects: *mut *mut Obj,
-    receiver: Value,
-    method: *mut ObjClosure,
-    vm: &mut VM,
-) -> *mut ObjBoundMethod {
-    let bound_method = allocate_object::<ObjBoundMethod>(ObjType::BoundMethod, objects, vm);
-
-    unsafe {
-        (*bound_method).receiver = receiver;
-        (*bound_method).method = method;
+        vm.heap
+            .allocate(HeapObj::BoundMethod(Self { receiver, method }))
     }
 
-    bound_method
+    pub fn to_string(&self, vm: &VM) -> String {
+        let HeapObj::Closure(closure) = &vm.heap[self.method] else {
+            panic!("Expected closure for method");
+        };
+
+        closure.to_string(vm)
+    }
 }

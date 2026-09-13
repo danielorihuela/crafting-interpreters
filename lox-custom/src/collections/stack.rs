@@ -70,21 +70,6 @@ impl<T> Stack<T> {
     }
 }
 
-#[cfg(debug_assertions)]
-pub mod debug {
-    use std::fmt::Display;
-
-    use super::*;
-
-    pub fn show_stack<T: Display>(stack: &Stack<T>) {
-        print!("          ");
-        for i in 0..stack.top {
-            print!("[{}]", stack[i]);
-        }
-        println!();
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
