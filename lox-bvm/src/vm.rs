@@ -91,7 +91,13 @@ impl VM {
 
         self.compiler = &mut compiler;
 
-        let parser = &mut Parser::new(scanner, self.compiler, &mut self.objects, &mut self.strings);
+        let parser = &mut Parser::new(
+            scanner,
+            self.compiler,
+            &mut self.compiler,
+            &mut self.objects,
+            &mut self.strings,
+        );
 
         let function = parser.compile();
 

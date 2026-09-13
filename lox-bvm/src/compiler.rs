@@ -13,7 +13,9 @@ use crate::{
 
 pub struct Parser<'src> {
     scanner: &'src mut Scanner<'src>,
+    // todo: remove compiler and only use vm_compiler
     compiler: *mut Compiler,
+    vm_compiler: *mut *mut Compiler,
 
     current_class: *mut ClassCompiler,
 
@@ -31,12 +33,14 @@ impl<'src> Parser<'src> {
     pub fn new(
         scanner: &'src mut Scanner<'src>,
         compiler: *mut Compiler,
+        vm_compiler: *mut *mut Compiler,
         objects: *mut *mut Obj,
         strings: *mut HashTable,
     ) -> Self {
         Self {
             scanner,
             compiler,
+            vm_compiler,
             current_class: std::ptr::null_mut(),
             current: Token::default(),
             previous: Token::default(),
@@ -185,6 +189,7 @@ impl<'src> Parser<'src> {
             self.previous.lexeme,
         );
         self.compiler = Box::into_raw(Box::new(compiler));
+        unsafe { *self.vm_compiler = self.compiler };
         let curr_compiler = unsafe { &mut *self.compiler };
 
         self.begin_scope();
@@ -608,6 +613,7 @@ impl<'src> Parser<'src> {
         }
 
         self.compiler = unsafe { &mut *(*self.compiler).enclosing };
+        unsafe { *self.vm_compiler = self.compiler };
 
         function
     }
@@ -1199,7 +1205,8 @@ mod tests {
 
                     let scanner = &mut Scanner::new(input);
                     let compiler = &mut Compiler::new(FunctionType::Script, &mut objects, &mut strings, std::ptr::null_mut(), "");
-                    let parser = &mut Parser::new(scanner, compiler, &mut objects, &mut strings);
+                    let mut compiler_ptr: *mut Compiler = compiler;
+                    let parser = &mut Parser::new(scanner, compiler, &mut compiler_ptr, &mut objects, &mut strings);
 
                     let function = parser.compile();
 
