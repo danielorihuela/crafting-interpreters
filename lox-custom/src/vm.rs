@@ -131,7 +131,7 @@ impl VM {
                 };
 
                 use crate::types::chunk::debug::disassemble_instruction;
-                let offset = unsafe { frame.ip.offset_from(function.chunk.code.data) as usize };
+                let offset = unsafe { frame.ip.offset_from(function.chunk.code.as_ptr()) as usize };
                 let _ = disassemble_instruction(&function.chunk, offset, self);
             }
 
@@ -733,7 +733,7 @@ impl VM {
             let HeapObj::Function(function) = &mut self.heap[function_id] else {
                 panic!("Expected function object");
             };
-            function.chunk.code.data
+            function.chunk.code.as_ptr() as *mut u8
         };
 
         let frame = &mut self.frames[self.frame_count as usize];
@@ -776,7 +776,7 @@ impl VM {
             };
 
             let instruction =
-                unsafe { frame.ip.offset_from_unsigned(function.chunk.code.data) - 1 };
+                unsafe { frame.ip.offset_from_unsigned(function.chunk.code.as_ptr()) - 1 };
             let line = function.chunk.lines[instruction];
             let where_ = if function.name.is_null() {
                 "script".to_string()
@@ -1071,7 +1071,7 @@ impl VM {
             }
             HeapObj::Function(function) => {
                 children.push(function.name);
-                for i in 0..function.chunk.values.count {
+                for i in 0..function.chunk.values.len() {
                     value_children.push(function.chunk.values[i].clone());
                 }
             }

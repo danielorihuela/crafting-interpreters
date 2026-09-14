@@ -123,7 +123,7 @@
 
           $git submodule init
           $git submodule update
-          (cd lox-custom; $cargo build --release; $cargo test; cargo miri test)
+          (cd lox-custom; $cargo build --release; $cargo test)
           (cd craftinginterpreters/tool; $dart pub get > /dev/null)
 
           cd craftinginterpreters

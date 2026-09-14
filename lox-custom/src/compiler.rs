@@ -987,7 +987,7 @@ impl<'src> Parser<'src> {
         unsafe {
             (*function_ptr)
                 .chunk
-                .write(b.into(), self.previous.line as usize, self.vm);
+                .write(b.into(), self.previous.line as usize);
         }
     }
 
@@ -1062,7 +1062,7 @@ impl<'src> Parser<'src> {
         else {
             panic!("Expected a function object");
         };
-        function.chunk.code.count
+        function.chunk.code.len()
     }
 }
 
@@ -1261,7 +1261,7 @@ mod tests {
 
                     let mut expected = Chunk::default();
                     for byte in bytes {
-                        expected.write(byte.into(), 1, &mut vm);
+                        expected.write(byte.into(), 1);
                     }
                     let HeapObj::Function(function_obj) = &vm.heap[function] else {
                         panic!("Expected a function object");

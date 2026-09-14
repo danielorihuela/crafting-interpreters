@@ -1,24 +1,24 @@
-use crate::{collections::dynarray::DynArray, types::value::Value, vm::VM};
+use crate::{types::value::Value, vm::VM};
 
 #[derive(Default)]
 pub struct Chunk {
-    pub code: DynArray<u8>,
-    pub values: DynArray<Value>,
-    pub lines: DynArray<usize>,
+    pub code: Vec<u8>,
+    pub values: Vec<Value>,
+    pub lines: Vec<usize>,
 }
 
 impl Chunk {
-    pub fn write(&mut self, byte: u8, line: usize, vm: &mut VM) {
-        self.code.write(byte, vm);
-        self.lines.write(line, vm);
+    pub fn write(&mut self, byte: u8, line: usize) {
+        self.code.push(byte);
+        self.lines.push(line);
     }
 
     pub fn add_constant(&mut self, value: Value, vm: &mut VM) -> usize {
         vm.stack.push(value.clone());
-        self.values.write(value.clone(), vm);
+        self.values.push(value);
         vm.stack.pop();
 
-        self.values.count - 1
+        self.values.len() - 1
     }
 }
 
@@ -32,7 +32,7 @@ pub mod debug {
         pub fn disassemble(&self, name: &str, vm: &VM) {
             println!("== {name} ==");
             let mut offset = 0;
-            while offset != self.code.count {
+            while offset != self.code.len() {
                 offset = disassemble_instruction(self, offset, vm);
             }
         }
@@ -82,7 +82,7 @@ pub mod debug {
                 let mut curr_offset = offset;
 
                 curr_offset += 1;
-                let constant = unsafe { *(chunk.code.data).add(curr_offset) };
+                let constant = chunk.code[curr_offset];
                 let value = &chunk.values[constant as usize];
                 println!(
                     "{:<16} {constant:4} '{}'",
@@ -110,7 +110,7 @@ pub mod debug {
                 curr_offset
             }
             OpCode::Invoke | OpCode::SuperInvoke => {
-                let constant = unsafe { *(chunk.code.data).add(offset + 1) };
+                let constant = chunk.code[offset + 1];
                 let value = &chunk.values[constant as usize];
                 let arg_count = chunk.code[offset + 2];
                 println!(
@@ -140,7 +140,7 @@ pub mod debug {
     }
 
     fn print_constant_instructions(chunk: &Chunk, offset: usize, opcode: OpCode, vm: &VM) {
-        let constant = unsafe { *(chunk.code.data).add(offset + 1) };
+        let constant = chunk.code[offset + 1];
         let value = &chunk.values[constant as usize];
         println!(
             "{:<16} {constant:4} '{}'",
@@ -156,19 +156,17 @@ mod tests {
 
     #[test]
     fn test_chunk_write() {
-        let mut vm = VM::new();
-
         let mut chunk = Chunk::default();
 
-        chunk.write(1, 1, &mut vm);
+        chunk.write(1, 1);
         assert_eq!(chunk.code[0], 1);
         assert_eq!(chunk.lines[0], 1);
 
-        chunk.write(2, 2, &mut vm);
+        chunk.write(2, 2);
         assert_eq!(chunk.code[1], 2);
         assert_eq!(chunk.lines[1], 2);
 
-        chunk.write(3, 3, &mut vm);
+        chunk.write(3, 3);
         assert_eq!(chunk.code[2], 3);
         assert_eq!(chunk.lines[2], 3);
     }
