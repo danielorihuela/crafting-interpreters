@@ -29,7 +29,7 @@ impl ObjClosure {
             let HeapObj::Function(function) = &vm.heap[self.function_id] else {
                 panic!("Expected a function object");
             };
-            format!("{}", function.to_string(vm))
+            function.to_string(vm)
         }
     }
 }

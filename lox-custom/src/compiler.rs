@@ -619,7 +619,7 @@ impl<'src> Parser<'src> {
                     }
                 };
 
-                function.chunk.disassemble(&name, &self.vm);
+                function.chunk.disassemble(&name, self.vm);
             }
         }
 

@@ -18,7 +18,7 @@ impl ObjString {
 pub fn allocate_string(vm: &mut VM, data: &str) -> ObjId {
     let interned = vm.strings.get(data);
     if let Some(interned) = interned {
-        return interned.clone();
+        return *interned;
     }
 
     vm.bytes_allocated += std::mem::size_of::<HeapObj>();

@@ -26,10 +26,10 @@ pub enum Value {
 impl Value {
     pub fn to_string(&self, vm: &VM) -> String {
         match self {
-            Value::Bool(b) => format!("{}", b),
-            Value::Number(n) => format!("{}", n),
-            Value::Nil => format!("{}", "nil"),
-            Value::Obj(o) => format!("{}", o.to_string(vm)),
+            Value::Bool(b) => b.to_string(),
+            Value::Number(n) => n.to_string(),
+            Value::Nil => "nil".to_string(),
+            Value::Obj(o) => o.to_string(vm),
         }
     }
 }
