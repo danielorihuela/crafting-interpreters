@@ -57,7 +57,7 @@ impl VM {
     pub fn new() -> Self {
         let call_frame = CallFrame {
             closure: ObjId::null(),
-            ip: std::ptr::null_mut(),
+            ip: 0,
             slots: std::ptr::null_mut(),
         };
 
@@ -131,8 +131,7 @@ impl VM {
                 };
 
                 use crate::types::chunk::debug::disassemble_instruction;
-                let offset = unsafe { frame.ip.offset_from(function.chunk.code.as_ptr()) as usize };
-                let _ = disassemble_instruction(&function.chunk, offset, self);
+                let _ = disassemble_instruction(&function.chunk, frame.ip, self);
             }
 
             let instruction = OpCode::from(self.read_byte_from_frame(frame_index));
@@ -545,19 +544,27 @@ impl VM {
 
     fn read_byte_from_frame(&mut self, frame_index: usize) -> u8 {
         let ip = self.frames[frame_index].ip;
-        let byte = unsafe { *ip };
-        self.frames[frame_index].ip = unsafe { ip.add(1) };
+        let closure_id = self.frames[frame_index].closure;
+        let HeapObj::Closure(closure) = &self.heap[closure_id] else {
+            panic!("Expected closure object");
+        };
+        let HeapObj::Function(function) = &self.heap[closure.function_id] else {
+            panic!("Expected function object");
+        };
+        let byte = function.chunk.code[ip];
+        self.frames[frame_index].ip = ip + 1;
+
         byte
     }
 
     fn advance_frame_ip(&mut self, frame_index: usize, offset: usize) {
         let ip = self.frames[frame_index].ip;
-        self.frames[frame_index].ip = unsafe { ip.add(offset) };
+        self.frames[frame_index].ip = ip + offset;
     }
 
     fn rewind_frame_ip(&mut self, frame_index: usize, offset: usize) {
         let ip = self.frames[frame_index].ip;
-        self.frames[frame_index].ip = unsafe { ip.sub(offset) };
+        self.frames[frame_index].ip = ip - offset;
     }
 
     fn frame_function_id(&self, frame_index: usize) -> ObjId {
@@ -729,17 +736,10 @@ impl VM {
             return false;
         }
 
-        let ip = {
-            let HeapObj::Function(function) = &mut self.heap[function_id] else {
-                panic!("Expected function object");
-            };
-            function.chunk.code.as_ptr() as *mut u8
-        };
-
         let frame = &mut self.frames[self.frame_count as usize];
         self.frame_count += 1;
         frame.closure = closure_id;
-        frame.ip = ip;
+        frame.ip = 0;
         let stack_base = self.stack.len() - arg_count - 1;
         frame.slots = unsafe { self.stack.as_mut_ptr().add(stack_base) };
 
@@ -775,8 +775,7 @@ impl VM {
                 break;
             };
 
-            let instruction =
-                unsafe { frame.ip.offset_from_unsigned(function.chunk.code.as_ptr()) - 1 };
+            let instruction = frame.ip - 1;
             let line = function.chunk.lines[instruction];
             let where_ = if function.name.is_null() {
                 "script".to_string()
@@ -935,7 +934,7 @@ impl InterpretResult {
 #[derive(Clone)]
 pub struct CallFrame {
     pub closure: ObjId,
-    pub ip: *mut u8,
+    pub ip: usize,
     pub slots: *mut Value,
 }
 
