@@ -58,7 +58,7 @@ impl VM {
         let call_frame = CallFrame {
             closure: ObjId::null(),
             ip: 0,
-            slots: std::ptr::null_mut(),
+            slots: 0,
         };
 
         let mut vm = VM {
@@ -231,9 +231,7 @@ impl VM {
                         return InterpretResult::Ok;
                     }
 
-                    unsafe {
-                        self.stack.truncate_to_ptr(slots);
-                    }
+                    self.stack.truncate(slots);
                     self.stack.push(result);
                 }
                 OpCode::Print => {
@@ -287,16 +285,12 @@ impl VM {
                 OpCode::GetLocal => {
                     let slot = self.read_byte_from_frame(frame_index) as usize;
                     let slots = self.frames[frame_index].slots;
-                    unsafe {
-                        self.stack.push((*slots.add(slot)).clone());
-                    }
+                    self.stack.push(self.stack[slots + slot].clone());
                 }
                 OpCode::SetLocal => {
                     let slot = self.read_byte_from_frame(frame_index) as usize;
                     let slots = self.frames[frame_index].slots;
-                    unsafe {
-                        *slots.add(slot) = self.stack.peek(0).clone();
-                    }
+                    self.stack[slots + slot] = self.stack.peek(0).clone();
                 }
                 OpCode::JumpIfFalse => {
                     let offset_0 = self.read_byte_from_frame(frame_index) as usize;
@@ -346,7 +340,7 @@ impl VM {
 
                         let upvalue_id = if is_local {
                             let slots = self.frames[frame_index].slots;
-                            let local = unsafe { slots.add(index) };
+                            let local = &mut self.stack[slots + index];
                             capture_upvalue(local, self)
                         } else {
                             let parent_closure = self.frames[frame_index].closure;
@@ -400,7 +394,7 @@ impl VM {
                     }
                 }
                 OpCode::CloseUpvalue => {
-                    let last = unsafe { self.stack.as_mut_ptr().add(self.stack.len() - 1) };
+                    let last = self.stack.len() - 1;
                     close_upvalues(self, last);
                     self.stack.pop();
                 }
@@ -741,7 +735,7 @@ impl VM {
         frame.closure = closure_id;
         frame.ip = 0;
         let stack_base = self.stack.len() - arg_count - 1;
-        frame.slots = unsafe { self.stack.as_mut_ptr().add(stack_base) };
+        frame.slots = stack_base;
 
         true
     }
@@ -881,7 +875,7 @@ fn capture_upvalue(local: *mut Value, vm: &mut VM) -> ObjId {
     created
 }
 
-fn close_upvalues(vm: &mut VM, last: *mut Value) {
+fn close_upvalues(vm: &mut VM, last: usize) {
     while !vm.open_upvalues.is_null() {
         let curr = vm.open_upvalues;
         let location = {
@@ -891,7 +885,7 @@ fn close_upvalues(vm: &mut VM, last: *mut Value) {
             upvalue.location
         };
 
-        if location < last {
+        if location < &mut vm.stack[last] as *mut Value {
             break;
         }
 
@@ -935,7 +929,7 @@ impl InterpretResult {
 pub struct CallFrame {
     pub closure: ObjId,
     pub ip: usize,
-    pub slots: *mut Value,
+    pub slots: usize,
 }
 
 impl Drop for VM {
