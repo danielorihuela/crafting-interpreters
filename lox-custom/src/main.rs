@@ -2,7 +2,6 @@ use std::{fs, io::Write};
 
 use crate::vm::VM;
 
-mod collections;
 mod compiler;
 mod memory;
 mod scanner;

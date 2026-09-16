@@ -6,7 +6,7 @@ use crate::{
 use std::fmt::Display;
 
 pub struct ObjUpvalue {
-    pub location: *mut Value,
+    pub location: isize,
     pub next: ObjId,
     pub closed: Value,
 }
@@ -18,7 +18,7 @@ impl Display for ObjUpvalue {
 }
 
 impl ObjUpvalue {
-    pub fn new(slot: *mut Value, vm: &mut VM) -> ObjId {
+    pub fn new(slot: isize, vm: &mut VM) -> ObjId {
         vm.bytes_allocated += std::mem::size_of::<HeapObj>();
         if vm.bytes_allocated > vm.next_gc {
             vm.garbage_collect();
