@@ -3,7 +3,6 @@ pub mod closure;
 pub mod function;
 pub mod native;
 pub mod obj;
-pub mod string;
 pub mod upvalue;
 
 use std::{

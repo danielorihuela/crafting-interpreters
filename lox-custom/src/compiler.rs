@@ -11,7 +11,6 @@ use crate::{
             Value,
             function::ObjFunction,
             obj::{HeapObj, Obj},
-            string::ObjString,
         },
     },
     vm::VM,
@@ -308,7 +307,7 @@ impl<'src> Parser<'src> {
     }
 
     fn identifier_constant(&mut self) -> u8 {
-        let id = ObjString::new(self.vm, self.previous.lexeme);
+        let id = self.vm.allocate_string(self.previous.lexeme);
         let value = Value::Obj(Obj::String(id));
         self.make_constant(value)
     }
@@ -703,10 +702,9 @@ impl<'src> Parser<'src> {
     }
 
     fn string(&mut self, _can_assign: bool) {
-        let id = ObjString::new(
-            self.vm,
-            &self.previous.lexeme[1..self.previous.lexeme.len() - 1],
-        );
+        let id = self
+            .vm
+            .allocate_string(&self.previous.lexeme[1..self.previous.lexeme.len() - 1]);
         let obj = Value::Obj(Obj::String(id));
         self.emit_constant(obj);
     }
@@ -759,7 +757,7 @@ impl<'src> Parser<'src> {
                 set_opcode = OpCode::SetUpvalue;
                 get_opcode = OpCode::GetUpvalue;
             } else {
-                let id = ObjString::new(self.vm, name.lexeme);
+                let id = self.vm.allocate_string(name.lexeme);
                 arg = self.make_constant(Value::Obj(Obj::String(id))) as isize;
                 set_opcode = OpCode::SetGlobal;
                 get_opcode = OpCode::GetGlobal;
@@ -1213,13 +1211,13 @@ impl<'src> Compiler {
                 index: 0,
                 is_local: false,
             }; u8::MAX as usize + 1],
-            function: ObjFunction::new(vm),
+            function: vm.allocate(ObjFunction::new()),
             ftype: ftype.clone(),
             enclosing,
         };
 
         if ftype != FunctionType::Script {
-            let name_id = ObjString::new(vm, data);
+            let name_id = vm.allocate_string(data);
             let HeapObj::Function(function) = &mut vm.heap[compiler.function] else {
                 panic!("Expected a function object");
             };

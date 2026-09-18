@@ -12,16 +12,11 @@ pub struct ObjClass {
 }
 
 impl ObjClass {
-    pub fn new(name: ObjId, vm: &mut VM) -> ObjId {
-        vm.bytes_allocated += std::mem::size_of::<HeapObj>();
-        if vm.bytes_allocated > vm.next_gc {
-            vm.garbage_collect();
-        }
-
-        vm.heap.allocate(HeapObj::Class(Self {
+    pub fn new(name: ObjId) -> Self {
+        Self {
             name,
             methods: HashMap::new(),
-        }))
+        }
     }
 
     pub fn to_string(&self, vm: &VM) -> String {
@@ -39,16 +34,11 @@ pub struct ObjInstance {
 }
 
 impl ObjInstance {
-    pub fn new(class: ObjId, vm: &mut VM) -> ObjId {
-        vm.bytes_allocated += std::mem::size_of::<HeapObj>();
-        if vm.bytes_allocated > vm.next_gc {
-            vm.garbage_collect();
-        }
-
-        vm.heap.allocate(HeapObj::Instance(Self {
+    pub fn new(class: ObjId) -> Self {
+        Self {
             class,
             fields: HashMap::new(),
-        }))
+        }
     }
 
     pub fn to_string(&self, vm: &VM) -> String {
@@ -66,14 +56,8 @@ pub struct ObjBoundMethod {
 }
 
 impl ObjBoundMethod {
-    pub fn new(receiver: Value, method: ObjId, vm: &mut VM) -> ObjId {
-        vm.bytes_allocated += std::mem::size_of::<HeapObj>();
-        if vm.bytes_allocated > vm.next_gc {
-            vm.garbage_collect();
-        }
-
-        vm.heap
-            .allocate(HeapObj::BoundMethod(Self { receiver, method }))
+    pub fn new(receiver: Value, method: ObjId) -> Self {
+        Self { receiver, method }
     }
 
     pub fn to_string(&self, vm: &VM) -> String {

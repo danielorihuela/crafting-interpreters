@@ -6,21 +6,27 @@ pub struct ObjClosure {
 }
 
 impl ObjClosure {
-    pub fn new(function_id: ObjId, vm: &mut VM) -> ObjId {
-        vm.bytes_allocated += std::mem::size_of::<HeapObj>();
-        if vm.bytes_allocated > vm.next_gc {
-            vm.garbage_collect();
-        }
-
-        let HeapObj::Function(function) = &vm.heap[function_id] else {
-            panic!("Expected a function object");
-        };
-        let upvalues = vec![ObjId::null(); function.upvalue_count];
-        vm.heap.allocate(HeapObj::Closure(ObjClosure {
+    pub fn new(function_id: ObjId, upvalue_count: usize) -> Self {
+        Self {
             function_id,
-            upvalues,
-        }))
+            upvalues: vec![ObjId::null(); upvalue_count],
+        }
     }
+    // pub fn new(function_id: ObjId, vm: &mut VM) -> ObjId {
+    //     vm.bytes_allocated += std::mem::size_of::<HeapObj>();
+    //     if vm.bytes_allocated > vm.next_gc {
+    //         vm.garbage_collect();
+    //     }
+
+    //     let HeapObj::Function(function) = &vm.heap[function_id] else {
+    //         panic!("Expected a function object");
+    //     };
+    //     let upvalues = vec![ObjId::null(); function.upvalue_count];
+    //     vm.heap.allocate(HeapObj::Closure(ObjClosure {
+    //         function_id,
+    //         upvalues,
+    //     }))
+    // }
 
     pub fn to_string(&self, vm: &VM) -> String {
         if self.function_id.is_null() {

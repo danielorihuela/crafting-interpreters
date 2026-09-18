@@ -6,10 +6,7 @@ use std::{
 use crate::{
     DEBUG_LOG_GC,
     compiler::{Compiler, FunctionType, Parser},
-    memory::{
-        gc::{GcCollector, GcContext},
-        heap::{Heap, ObjId},
-    },
+    memory::heap::{Heap, ObjId},
     scanner::Scanner,
     types::{
         opcode::OpCode,
@@ -19,7 +16,6 @@ use crate::{
             closure::ObjClosure,
             native::{NativeFn, ObjNative},
             obj::{HeapObj, Obj},
-            string::ObjString,
             upvalue::ObjUpvalue,
         },
     },
@@ -77,7 +73,7 @@ impl VM {
             output: Vec::new(),
         };
 
-        vm.init_string = ObjString::new(&mut vm, "init");
+        vm.init_string = vm.allocate_string("init");
         vm.define_native("clock", clock_native);
 
         vm
@@ -96,7 +92,10 @@ impl VM {
         }
 
         self.stack.push(Value::Obj(Obj::Function(function_id)));
-        let closure_id = ObjClosure::new(function_id, self);
+        let HeapObj::Function(function) = &self.heap[function_id] else {
+            panic!("Expected a function object");
+        };
+        let closure_id = self.allocate(ObjClosure::new(function_id, function.upvalue_count));
         self.stack.pop().unwrap();
         self.stack.push(Value::Obj(Obj::Closure(closure_id)));
 
@@ -166,7 +165,7 @@ impl VM {
                             b_str.clone()
                         };
                         Ok(Value::Obj(Obj::String(
-                            ObjString(a_text).add(self, &b_text),
+                            self.allocate_string(&format!("{a_text}{b_text}")),
                         )))
                     } else {
                         a + b
@@ -323,7 +322,11 @@ impl VM {
                     let position = self.read_byte_from_frame(frame_index) as usize;
 
                     let function_id = self.read_constant_function_id(frame_index, position);
-                    let closure_id = ObjClosure::new(function_id, self);
+                    let HeapObj::Function(function) = &self.heap[function_id] else {
+                        panic!("Expected a function object");
+                    };
+                    let closure_id =
+                        self.allocate(ObjClosure::new(function_id, function.upvalue_count));
                     self.stack.push(Value::Obj(Obj::Closure(closure_id)));
 
                     let upvalue_count = {
@@ -408,7 +411,7 @@ impl VM {
                     let position = self.read_byte_from_frame(frame_index) as usize;
 
                     let name = self.read_constant_string_id(frame_index, position);
-                    let class_id = ObjClass::new(name, self);
+                    let class_id = self.allocate(ObjClass::new(name));
                     self.stack.push(Value::Obj(Obj::Class(class_id)));
                 }
                 OpCode::GetProperty => {
@@ -656,9 +659,10 @@ impl VM {
             unreachable!("Functions are always wrapped in closures")
         } else if callee.is_class() {
             let class_id = callee.as_class();
-            let instance = Value::Obj(Obj::Instance(ObjInstance::new(class_id, self)));
+            let instance_id = self.allocate(ObjInstance::new(class_id));
+            let instance_value = Value::Obj(Obj::Instance(instance_id));
             let stack_len = self.stack.len();
-            self.stack[stack_len - arg_count - 1] = instance;
+            self.stack[stack_len - arg_count - 1] = instance_value;
 
             let initializer = {
                 let HeapObj::Class(class) = &self.heap[class_id] else {
@@ -796,8 +800,9 @@ impl VM {
     }
 
     fn define_native(&mut self, name: &str, function: NativeFn) {
-        let name_id = ObjString::new(self, name);
-        let native_id = ObjNative::new(self, function);
+        let name_id = self.allocate_string(name);
+        let native_id = self.allocate(ObjNative::new(function));
+        // let native_id = ObjNative::new(self, function);
         self.globals
             .insert(name_id, Value::Obj(Obj::Native(native_id)));
     }
@@ -813,7 +818,7 @@ fn bind_method(vm: &mut VM, class_id: ObjId, name: ObjId) -> Result<(), String> 
 
     if let Some(m) = method {
         let receiver = vm.stack[vm.stack.len() - 1].clone();
-        let bound_method = ObjBoundMethod::new(receiver, m.as_closure(), vm);
+        let bound_method = vm.allocate(ObjBoundMethod::new(receiver, m.as_closure()));
         vm.stack.pop();
         vm.stack.push(Value::Obj(Obj::BoundMethod(bound_method)));
         Ok(())
@@ -861,7 +866,7 @@ fn capture_upvalue(local: usize, vm: &mut VM) -> ObjId {
         }
     }
 
-    let created = ObjUpvalue::new(local as isize, vm);
+    let created = vm.allocate(ObjUpvalue::new(local as isize));
     {
         let HeapObj::Upvalue(upvalue) = &mut vm.heap[created] else {
             panic!("Expected upvalue object");
@@ -941,20 +946,6 @@ pub struct CallFrame {
 impl Drop for VM {
     fn drop(&mut self) {
         self.free();
-    }
-}
-
-impl GcCollector for VM {
-    fn gc_context(&mut self) -> GcContext<'_> {
-        GcContext {
-            bytes_allocated: &mut self.bytes_allocated,
-            next_gc: &mut self.next_gc,
-            stress_gc: crate::DEBUG_STRESS_GC,
-        }
-    }
-
-    fn collect_garbage(&mut self) {
-        self.garbage_collect();
     }
 }
 
@@ -1122,6 +1113,34 @@ impl VM {
                 self.bytes_allocated -= std::mem::size_of::<HeapObj>();
             }
         }
+    }
+}
+
+impl VM {
+    pub fn allocate(&mut self, obj: impl Into<HeapObj>) -> ObjId {
+        self.bytes_allocated += std::mem::size_of::<HeapObj>();
+        if self.bytes_allocated > self.next_gc {
+            self.garbage_collect();
+        }
+
+        self.heap.allocate(obj.into())
+    }
+
+    pub fn allocate_string(&mut self, data: &str) -> ObjId {
+        let interned = self.strings.get(data);
+        if let Some(interned) = interned {
+            return *interned;
+        }
+
+        let id = self.allocate(data.to_string());
+
+        self.strings.insert(data.to_string(), id);
+
+        self.stack.push(Value::Obj(Obj::String(id)));
+        self.strings.insert(data.to_string(), id);
+        self.stack.pop();
+
+        id
     }
 }
 

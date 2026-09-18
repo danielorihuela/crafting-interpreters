@@ -12,18 +12,13 @@ pub struct ObjFunction {
 }
 
 impl ObjFunction {
-    pub fn new(vm: &mut VM) -> ObjId {
-        vm.bytes_allocated += std::mem::size_of::<HeapObj>();
-        if vm.bytes_allocated > vm.next_gc {
-            vm.garbage_collect();
-        }
-
-        vm.heap.allocate(HeapObj::Function(Self {
+    pub fn new() -> Self {
+        Self {
             arity: 0,
             chunk: Chunk::default(),
             name: ObjId::null(),
             upvalue_count: 0,
-        }))
+        }
     }
 
     pub fn to_string(&self, vm: &VM) -> String {

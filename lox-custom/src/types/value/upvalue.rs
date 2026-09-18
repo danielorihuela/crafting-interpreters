@@ -1,8 +1,4 @@
-use crate::{
-    memory::heap::ObjId,
-    types::value::{Value, obj::HeapObj},
-    vm::VM,
-};
+use crate::{memory::heap::ObjId, types::value::Value};
 use std::fmt::Display;
 
 pub struct ObjUpvalue {
@@ -18,16 +14,11 @@ impl Display for ObjUpvalue {
 }
 
 impl ObjUpvalue {
-    pub fn new(slot: isize, vm: &mut VM) -> ObjId {
-        vm.bytes_allocated += std::mem::size_of::<HeapObj>();
-        if vm.bytes_allocated > vm.next_gc {
-            vm.garbage_collect();
-        }
-
-        vm.heap.allocate(HeapObj::Upvalue(Self {
+    pub fn new(slot: isize) -> Self {
+        Self {
             location: slot,
             next: ObjId::null(),
             closed: Value::Nil,
-        }))
+        }
     }
 }
