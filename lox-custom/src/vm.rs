@@ -1,5 +1,7 @@
 use std::{
+    cell::RefCell,
     collections::HashMap,
+    rc::Rc,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -35,7 +37,7 @@ pub struct VM {
     pub frame_count: u8,
 
     pub open_upvalues: ObjId,
-    pub compiler: *mut Compiler,
+    pub compiler: Option<Rc<RefCell<Compiler>>>,
     pub globals: GlobalsTable,
     gray_stack: Vec<ObjId>,
 
@@ -63,7 +65,7 @@ impl VM {
             frames: [(); FRAMES_MAX].map(|_| call_frame.clone()),
             frame_count: 0,
             open_upvalues: ObjId::null(),
-            compiler: std::ptr::null_mut(),
+            compiler: None,
             globals: GlobalsTable::new(),
             gray_stack: Vec::new(),
             bytes_allocated: 0,
@@ -81,10 +83,10 @@ impl VM {
 
     pub fn interpret(&mut self, source: &str) -> InterpretResult {
         let scanner = &mut Scanner::new(source);
-        let mut compiler = Compiler::new(FunctionType::Script, std::ptr::null_mut(), "", self);
-        self.compiler = &mut compiler;
+        let compiler = Compiler::new(FunctionType::Script, None, "", self);
+        self.compiler = Some(Rc::new(RefCell::new(compiler)));
 
-        let parser = &mut Parser::new(scanner, self.compiler, self);
+        let parser = &mut Parser::new(scanner, self.compiler.clone(), self);
         let function_id = parser.compile();
 
         if function_id.is_null() {
@@ -760,7 +762,7 @@ impl VM {
         self.globals.clear();
         self.strings.clear();
         self.heap.clear();
-        self.compiler = std::ptr::null_mut();
+        self.compiler = None;
         self.init_string = ObjId::null();
     }
 
@@ -1005,7 +1007,7 @@ impl VM {
             self.mark_value(&value);
         }
 
-        self.mark_compiler_roots(self.compiler);
+        self.mark_compiler_roots(self.compiler.clone());
         self.mark_object(self.init_string);
     }
 
@@ -1034,12 +1036,12 @@ impl VM {
         }
     }
 
-    fn mark_compiler_roots(&mut self, compiler: *mut Compiler) {
+    fn mark_compiler_roots(&mut self, compiler: Option<Rc<RefCell<Compiler>>>) {
         let mut curr_compiler = compiler;
-        while !curr_compiler.is_null() {
-            let function = unsafe { (*curr_compiler).function };
+        while let Some(compiler_rc) = curr_compiler {
+            let function = compiler_rc.borrow().function;
             self.mark_object(function);
-            curr_compiler = unsafe { (*curr_compiler).enclosing };
+            curr_compiler = compiler_rc.borrow().enclosing.clone();
         }
     }
 

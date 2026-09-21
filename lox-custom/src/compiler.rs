@@ -1,4 +1,4 @@
-use std::mem::transmute;
+use std::{cell::RefCell, mem::transmute, rc::Rc};
 
 use crate::{
     memory::heap::ObjId,
@@ -18,9 +18,9 @@ use crate::{
 
 pub struct Parser<'src> {
     scanner: &'src mut Scanner<'src>,
-    compiler: *mut Compiler,
+    compiler: Option<Rc<RefCell<Compiler>>>,
 
-    current_class: *mut ClassCompiler,
+    current_class: Option<Rc<RefCell<ClassCompiler>>>,
 
     current: Token<'src>,
     previous: Token<'src>,
@@ -34,13 +34,13 @@ pub struct Parser<'src> {
 impl<'src> Parser<'src> {
     pub fn new(
         scanner: &'src mut Scanner<'src>,
-        compiler: *mut Compiler,
+        compiler: Option<Rc<RefCell<Compiler>>>,
         vm: &'src mut VM,
     ) -> Self {
         Self {
             scanner,
             compiler,
-            current_class: std::ptr::null_mut(),
+            current_class: None,
             current: Token::default(),
             previous: Token::default(),
             vm,
@@ -106,11 +106,11 @@ impl<'src> Parser<'src> {
         self.emit_bytes(OpCode::Class, name_constant);
         self.define_variable(name_constant);
 
-        let class_compiler = Box::new(ClassCompiler {
-            enclosing: self.current_class,
+        let class_compiler = ClassCompiler {
+            enclosing: self.current_class.clone(),
             has_superclass: false,
-        });
-        self.current_class = Box::into_raw(class_compiler);
+        };
+        self.current_class = Some(Rc::new(RefCell::new(class_compiler)));
 
         if self.match_type(TokenType::Less) {
             self.consume(TokenType::Identifier, "Expect superclass name.");
@@ -126,7 +126,11 @@ impl<'src> Parser<'src> {
 
             self.named_variable_with(&class_name, false);
             self.emit_byte(OpCode::Inherit);
-            unsafe { (*self.current_class).has_superclass = true };
+            self.current_class
+                .as_mut()
+                .expect("class exists")
+                .borrow_mut()
+                .has_superclass = true;
         }
 
         self.named_variable_with(&class_name, false);
@@ -137,16 +141,16 @@ impl<'src> Parser<'src> {
         self.consume(TokenType::RightBrace, "Expect '}' after class body.");
         self.emit_byte(OpCode::Pop);
 
-        if !self.current_class.is_null() {
-            let class_compiler = unsafe { Box::from_raw(self.current_class) };
+        if let Some(class_compiler_rc) = self.current_class.take() {
+            let class_compiler = class_compiler_rc.borrow();
 
             if class_compiler.has_superclass {
                 self.end_scope();
             }
 
-            self.current_class = class_compiler.enclosing;
+            self.current_class = class_compiler.enclosing.clone();
         } else {
-            self.current_class = std::ptr::null_mut();
+            self.current_class = None;
         }
     }
 
@@ -179,9 +183,13 @@ impl<'src> Parser<'src> {
     }
 
     fn function(&mut self, ftype: FunctionType) {
-        let compiler = Compiler::new(ftype, self.compiler, self.previous.lexeme, self.vm);
-        self.compiler = Box::into_raw(Box::new(compiler));
-        let curr_compiler = unsafe { &mut *self.compiler };
+        let compiler = Rc::new(RefCell::new(Compiler::new(
+            ftype,
+            self.compiler.clone(),
+            self.previous.lexeme,
+            self.vm,
+        )));
+        self.compiler = Some(compiler.clone());
 
         self.begin_scope();
 
@@ -189,14 +197,18 @@ impl<'src> Parser<'src> {
 
         if self.current.ttype != TokenType::RightParen {
             loop {
-                let HeapObj::Function(function) =
-                    &mut self.vm.heap[unsafe { (*self.compiler).function }]
-                else {
-                    panic!("Expected a function object");
+                let arity = {
+                    let curr_compiler = compiler.borrow();
+                    let HeapObj::Function(function) = &mut self.vm.heap[curr_compiler.function]
+                    else {
+                        panic!("Expected a function object");
+                    };
+                    function.arity += 1;
+
+                    function.arity
                 };
 
-                function.arity += 1;
-                if function.arity > 255 {
+                if arity > 255 {
                     self.error_at_current("Can't have more than 255 parameters.");
                 }
 
@@ -224,6 +236,7 @@ impl<'src> Parser<'src> {
             function.upvalue_count
         };
 
+        let curr_compiler = compiler.borrow_mut();
         for i in 0..upvalue_count {
             let upvalue = &curr_compiler.upvalues[i];
             self.emit_byte(if upvalue.is_local { 1 } else { 0 });
@@ -247,19 +260,27 @@ impl<'src> Parser<'src> {
     }
 
     fn declare_variable(&mut self) {
-        if unsafe { (*self.compiler).scope_depth } == 0 {
+        if self.compiler.as_ref().unwrap().borrow().scope_depth == 0 {
             return;
         }
 
-        for i in (0..unsafe { (*self.compiler).local_count }).rev() {
-            let local = &unsafe { &(*self.compiler).locals[i] };
-            if local.depth != -1 && local.depth < unsafe { (*self.compiler).scope_depth } {
-                break;
-            }
+        let mut error = false;
+        {
+            let local_curr = self.compiler.as_ref().unwrap().borrow();
+            for i in (0..local_curr.local_count).rev() {
+                let local = &local_curr.locals[i];
+                if local.depth != -1 && local.depth < local_curr.scope_depth {
+                    break;
+                }
 
-            if local.name == self.previous.lexeme {
-                self.error("Already a variable with this name in this scope.");
+                if local.name == self.previous.lexeme {
+                    error = true;
+                }
             }
+        }
+
+        if error {
+            self.error("Already a variable with this name in this scope.");
         }
 
         self.add_local();
@@ -270,36 +291,46 @@ impl<'src> Parser<'src> {
     }
 
     fn add_local(&mut self) {
-        if unsafe { (*self.compiler).local_count } == (u8::MAX as usize + 1) {
+        let local_count = {
+            let compiler = self.compiler.as_ref().unwrap().borrow();
+            compiler.local_count
+        };
+
+        if local_count >= (u8::MAX as usize + 1) {
             self.error("Too many local variables in function.");
             return;
         }
 
-        let local = &mut unsafe { &mut (*self.compiler).locals[(*self.compiler).local_count] };
-        local.name = self.previous.lexeme.to_string();
-        local.depth = -1;
-        local.is_captured = false;
-        unsafe { (*self.compiler).local_count += 1 };
+        {
+            let mut compiler = self.compiler.as_ref().unwrap().borrow_mut();
+            let local = &mut compiler.locals[local_count];
+            local.name = self.previous.lexeme.to_string();
+            local.depth = -1;
+            local.is_captured = false;
+            compiler.local_count += 1;
+        }
     }
 
     fn add_local_for(&mut self, name: Token<'src>) {
-        if unsafe { (*self.compiler).local_count } == (u8::MAX as usize + 1) {
+        if self.compiler.as_ref().unwrap().borrow().local_count == (u8::MAX as usize + 1) {
             self.error("Too many local variables in function.");
             return;
         }
 
-        let local = &mut unsafe { &mut (*self.compiler).locals[(*self.compiler).local_count] };
+        let local_count = self.compiler.as_ref().unwrap().borrow().local_count;
+        let compiler = &mut self.compiler.as_ref().unwrap().borrow_mut();
+        let local = &mut compiler.locals[local_count];
         local.name = name.lexeme.to_string();
         local.depth = -1;
         local.is_captured = false;
-        unsafe { (*self.compiler).local_count += 1 };
+        compiler.local_count += 1;
     }
 
     fn parse_variable(&mut self, error_message: &str) -> u8 {
         self.consume(TokenType::Identifier, error_message);
 
         self.declare_variable();
-        if unsafe { (*self.compiler).scope_depth } > 0 {
+        if self.compiler.as_ref().unwrap().borrow().scope_depth > 0 {
             return 0;
         }
 
@@ -313,7 +344,7 @@ impl<'src> Parser<'src> {
     }
 
     fn define_variable(&mut self, global: u8) {
-        if unsafe { (*self.compiler).scope_depth } > 0 {
+        if self.compiler.as_ref().unwrap().borrow().scope_depth > 0 {
             self.mark_initialized();
             return;
         }
@@ -322,12 +353,15 @@ impl<'src> Parser<'src> {
     }
 
     fn mark_initialized(&mut self) {
-        if unsafe { (*self.compiler).scope_depth } == 0 {
+        if self.compiler.as_ref().unwrap().borrow().scope_depth == 0 {
             return;
         }
 
-        let local = &mut unsafe { &mut (*self.compiler).locals[(*self.compiler).local_count - 1] };
-        local.depth = unsafe { (*self.compiler).scope_depth };
+        let local_count = self.compiler.as_ref().unwrap().borrow().local_count;
+        let scope_depth = self.compiler.as_ref().unwrap().borrow().scope_depth;
+        let compiler = &mut self.compiler.as_ref().unwrap().borrow_mut();
+        let local = &mut compiler.locals[local_count - 1];
+        local.depth = scope_depth;
     }
 
     fn statement(&mut self) {
@@ -377,14 +411,14 @@ impl<'src> Parser<'src> {
     }
 
     fn return_statement(&mut self) {
-        if unsafe { &(*self.compiler).ftype } == &FunctionType::Script {
+        if self.compiler.as_ref().unwrap().borrow().ftype == FunctionType::Script {
             self.error("Can't return from top-level code.");
         }
 
         if self.match_type(TokenType::Semicolon) {
             self.emit_return();
         } else {
-            if unsafe { (*self.compiler).ftype.clone() } == FunctionType::Initializer {
+            if self.compiler.as_ref().unwrap().borrow().ftype == FunctionType::Initializer {
                 self.error("Can't return a value from an initializer.");
             }
 
@@ -477,7 +511,8 @@ impl<'src> Parser<'src> {
             self.error("Too much code to jump over.");
         }
 
-        let HeapObj::Function(function) = &mut self.vm.heap[unsafe { (*self.compiler).function }]
+        let HeapObj::Function(function) =
+            &mut self.vm.heap[self.compiler.as_ref().unwrap().borrow().function]
         else {
             panic!("Expected a function object");
         };
@@ -486,7 +521,7 @@ impl<'src> Parser<'src> {
     }
 
     fn begin_scope(&mut self) {
-        unsafe { (*self.compiler).scope_depth += 1 };
+        self.compiler.as_ref().unwrap().borrow_mut().scope_depth += 1;
     }
 
     fn block(&mut self) {
@@ -498,19 +533,23 @@ impl<'src> Parser<'src> {
     }
 
     fn end_scope(&mut self) {
-        unsafe { (*self.compiler).scope_depth -= 1 };
+        self.compiler.as_ref().unwrap().borrow_mut().scope_depth -= 1;
 
-        while unsafe {
-            (*self.compiler).local_count > 0
-                && (*self.compiler).locals[(*self.compiler).local_count - 1].depth
-                    > (*self.compiler).scope_depth
-        } {
-            if unsafe { (*self.compiler).locals[(*self.compiler).local_count - 1].is_captured } {
+        while self.compiler.as_ref().unwrap().borrow().local_count > 0
+            && self.compiler.as_ref().unwrap().borrow().locals
+                [self.compiler.as_ref().unwrap().borrow().local_count - 1]
+                .depth
+                > self.compiler.as_ref().unwrap().borrow().scope_depth
+        {
+            if self.compiler.as_ref().unwrap().borrow().locals
+                [self.compiler.as_ref().unwrap().borrow().local_count - 1]
+                .is_captured
+            {
                 self.emit_byte(OpCode::CloseUpvalue);
             } else {
                 self.emit_byte(OpCode::Pop);
             }
-            unsafe { (*self.compiler).local_count -= 1 };
+            self.compiler.as_ref().unwrap().borrow_mut().local_count -= 1;
         }
     }
 
@@ -602,7 +641,7 @@ impl<'src> Parser<'src> {
         #[cfg(debug_assertions)]
         {
             if !self.had_error {
-                let function_id = unsafe { (*self.compiler).function };
+                let function_id = self.compiler.as_ref().unwrap().borrow().function;
                 let HeapObj::Function(function) = &self.vm.heap[function_id] else {
                     panic!("Expected a function object");
                 };
@@ -622,12 +661,13 @@ impl<'src> Parser<'src> {
             }
         }
 
-        let function = unsafe { (*self.compiler).function };
-        if unsafe { (*self.compiler).enclosing.is_null() } {
+        let function = self.compiler.as_ref().unwrap().borrow().function;
+        let enclosing = self.compiler.as_ref().unwrap().borrow().enclosing.clone();
+        if self.compiler.as_ref().unwrap().borrow().enclosing.is_none() {
             return function;
         }
 
-        self.compiler = unsafe { &mut *(*self.compiler).enclosing };
+        self.compiler = enclosing;
 
         function
     }
@@ -714,7 +754,7 @@ impl<'src> Parser<'src> {
     }
 
     fn this(&mut self, _can_assign: bool) {
-        if self.current_class.is_null() {
+        if self.current_class.is_none() {
             self.error("Can't use 'this' outside of a class.");
             return;
         }
@@ -722,9 +762,9 @@ impl<'src> Parser<'src> {
     }
 
     fn super_(&mut self, _can_assign: bool) {
-        if self.current_class.is_null() {
+        if self.current_class.is_none() {
             self.error("Can't use 'super' outside of a class.");
-        } else if unsafe { !(*self.current_class).has_superclass } {
+        } else if !self.current_class.as_ref().unwrap().borrow().has_superclass {
             self.error("Can't use 'super' in a class with no superclass.");
         }
 
@@ -747,12 +787,12 @@ impl<'src> Parser<'src> {
     fn named_variable_with(&mut self, name: &Token<'src>, can_assign: bool) {
         let set_opcode;
         let get_opcode;
-        let mut arg = resolve_local(self, self.compiler, name);
+        let mut arg = resolve_local(self, self.compiler.clone(), name);
         if arg != -1 {
             set_opcode = OpCode::SetLocal;
             get_opcode = OpCode::GetLocal;
         } else {
-            arg = self.resolve_upvalue(self.compiler, name);
+            arg = self.resolve_upvalue(self.compiler.clone(), name);
             if arg != -1 {
                 set_opcode = OpCode::SetUpvalue;
                 get_opcode = OpCode::GetUpvalue;
@@ -776,12 +816,12 @@ impl<'src> Parser<'src> {
         let set_opcode;
         let get_opcode;
         let name = self.previous.clone();
-        let mut arg = resolve_local(self, self.compiler, &name);
+        let mut arg = resolve_local(self, self.compiler.clone(), &name);
         if arg != -1 {
             set_opcode = OpCode::SetLocal;
             get_opcode = OpCode::GetLocal;
         } else {
-            arg = self.resolve_upvalue(self.compiler, &name);
+            arg = self.resolve_upvalue(self.compiler.clone(), &name);
             if arg != -1 {
                 set_opcode = OpCode::SetUpvalue;
                 get_opcode = OpCode::GetUpvalue;
@@ -800,15 +840,19 @@ impl<'src> Parser<'src> {
         }
     }
 
-    fn resolve_upvalue(&mut self, compiler: *mut Compiler, name: &Token<'src>) -> isize {
-        if unsafe { (*compiler).enclosing.is_null() } {
+    fn resolve_upvalue(
+        &mut self,
+        compiler: Option<Rc<RefCell<Compiler>>>,
+        name: &Token<'src>,
+    ) -> isize {
+        if compiler.as_ref().unwrap().borrow().enclosing.is_none() {
             return -1;
         }
 
-        let enclosing = unsafe { &mut *(*compiler).enclosing };
-        let local = resolve_local(self, enclosing, name);
+        let enclosing = compiler.as_ref().unwrap().borrow().enclosing.clone();
+        let local = resolve_local(self, enclosing.clone(), name);
         if local != -1 {
-            enclosing.locals[local as usize].is_captured = true;
+            enclosing.as_ref().unwrap().borrow_mut().locals[local as usize].is_captured = true;
             match add_upvalue(compiler, self.vm, local as u8, true) {
                 Ok(index) => return index,
                 Err(message) => {
@@ -975,7 +1019,7 @@ impl<'src> Parser<'src> {
     }
 
     fn emit_byte(&mut self, b: impl Into<u8>) {
-        let function = unsafe { (*self.compiler).function };
+        let function = self.compiler.as_ref().unwrap().borrow().function;
         let function_ptr = {
             let HeapObj::Function(function) = &mut self.vm.heap[function] else {
                 panic!("Expected a function object");
@@ -990,7 +1034,7 @@ impl<'src> Parser<'src> {
     }
 
     fn emit_return(&mut self) {
-        if unsafe { (*self.compiler).ftype.clone() } == FunctionType::Initializer {
+        if self.compiler.as_ref().unwrap().borrow().ftype.clone() == FunctionType::Initializer {
             self.emit_bytes(OpCode::GetLocal, 0);
         } else {
             self.emit_byte(OpCode::Nil);
@@ -1010,7 +1054,7 @@ impl<'src> Parser<'src> {
     }
 
     fn make_constant(&mut self, value: Value) -> u8 {
-        let function = unsafe { (*self.compiler).function };
+        let function = self.compiler.as_ref().unwrap().borrow().function;
         let function_ptr = {
             let HeapObj::Function(function) = &mut self.vm.heap[function] else {
                 panic!("Expected a function object");
@@ -1056,7 +1100,8 @@ impl<'src> Parser<'src> {
     }
 
     fn current_chunk_code_count(&self) -> usize {
-        let HeapObj::Function(function) = &self.vm.heap[unsafe { (*self.compiler).function }]
+        let HeapObj::Function(function) =
+            &self.vm.heap[self.compiler.as_ref().unwrap().borrow().function]
         else {
             panic!("Expected a function object");
         };
@@ -1066,11 +1111,11 @@ impl<'src> Parser<'src> {
 
 fn resolve_local<'src>(
     parser: &mut Parser<'src>,
-    compiler: *mut Compiler,
+    compiler: Option<Rc<RefCell<Compiler>>>,
     name: &Token<'src>,
 ) -> isize {
-    for i in (0..unsafe { (*compiler).local_count }).rev() {
-        let local = unsafe { &(*compiler).locals[i] };
+    for i in (0..compiler.as_ref().unwrap().borrow().local_count).rev() {
+        let local = &compiler.as_ref().unwrap().borrow().locals[i];
         if local.name == name.lexeme {
             if local.depth == -1 {
                 parser.error("Can't read local variable in its own initializer.");
@@ -1083,12 +1128,12 @@ fn resolve_local<'src>(
 }
 
 fn add_upvalue(
-    compiler: *mut Compiler,
+    compiler: Option<Rc<RefCell<Compiler>>>,
     vm: &mut VM,
     index: u8,
     is_local: bool,
 ) -> Result<isize, String> {
-    let function_id = unsafe { (*compiler).function };
+    let function_id = compiler.as_ref().unwrap().borrow().function;
     let upvalue_count = {
         let HeapObj::Function(function) = &vm.heap[function_id] else {
             panic!("Expected a function object");
@@ -1097,7 +1142,7 @@ fn add_upvalue(
     };
 
     for i in 0..upvalue_count {
-        let upvalue = unsafe { &(*compiler).upvalues[i] };
+        let upvalue = &compiler.as_ref().unwrap().borrow().upvalues[i];
         if upvalue.index == index && upvalue.is_local == is_local {
             return Ok(i as isize);
         }
@@ -1107,8 +1152,8 @@ fn add_upvalue(
         return Err("Too many closure variables in function.".to_string());
     }
 
-    unsafe { (*compiler).upvalues[upvalue_count].is_local = is_local };
-    unsafe { (*compiler).upvalues[upvalue_count].index = index };
+    compiler.as_ref().unwrap().borrow_mut().upvalues[upvalue_count].is_local = is_local;
+    compiler.as_ref().unwrap().borrow_mut().upvalues[upvalue_count].index = index;
 
     let HeapObj::Function(function) = &mut vm.heap[function_id] else {
         panic!("Expected a function object");
@@ -1161,11 +1206,11 @@ pub struct Compiler {
     pub function: ObjId,
     ftype: FunctionType,
 
-    pub enclosing: *mut Compiler,
+    pub enclosing: Option<Rc<RefCell<Compiler>>>,
 }
 
 pub struct ClassCompiler {
-    enclosing: *mut ClassCompiler,
+    enclosing: Option<Rc<RefCell<ClassCompiler>>>,
     has_superclass: bool,
 }
 
@@ -1185,7 +1230,7 @@ pub struct Local {
 impl<'src> Compiler {
     pub fn new(
         ftype: FunctionType,
-        enclosing: *mut Compiler,
+        enclosing: Option<Rc<RefCell<Compiler>>>,
         data: &str,
         vm: &'src mut VM,
     ) -> Self {
@@ -1252,8 +1297,8 @@ mod tests {
 
                     let scanner = &mut Scanner::new(input);
                     let mut vm = VM::new();
-                    let compiler = &mut Compiler::new(FunctionType::Script, std::ptr::null_mut(), "", &mut vm);
-                    let parser = &mut Parser::new(scanner, compiler, &mut vm);
+                    let compiler = Rc::new(RefCell::new(Compiler::new(FunctionType::Script, None, "", &mut vm)));
+                    let parser = &mut Parser::new(scanner, Some(compiler), &mut vm);
 
                     let function = parser.compile();
 
