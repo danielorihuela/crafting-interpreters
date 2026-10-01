@@ -10,7 +10,7 @@ use std::{
     ops::{Add, Div, Mul, Sub},
 };
 
-use crate::{memory::heap::ObjId, types::value::obj::Obj, vm::VM};
+use crate::{heap::ObjId, types::value::obj::Obj, vm::VM};
 
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub enum Value {

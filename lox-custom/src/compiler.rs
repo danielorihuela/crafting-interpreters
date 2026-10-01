@@ -1,7 +1,7 @@
 use std::{cell::RefCell, mem::transmute, rc::Rc};
 
 use crate::{
-    memory::heap::ObjId,
+    heap::ObjId,
     scanner::Scanner,
     types::{
         TokenType,

@@ -1,4 +1,4 @@
-use crate::{memory::heap::ObjId, types::value::Value};
+use crate::{heap::ObjId, types::value::Value};
 use std::fmt::Display;
 
 pub struct ObjUpvalue {

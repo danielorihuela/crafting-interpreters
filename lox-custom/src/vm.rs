@@ -8,7 +8,7 @@ use std::{
 use crate::{
     DEBUG_LOG_GC,
     compiler::{Compiler, FunctionType, Parser},
-    memory::heap::{Heap, ObjId},
+    heap::{Heap, ObjId},
     scanner::Scanner,
     types::{
         opcode::OpCode,

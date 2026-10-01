@@ -1,5 +1,5 @@
 use crate::{
-    memory::heap::ObjId,
+    heap::ObjId,
     types::{chunk::Chunk, value::obj::HeapObj},
     vm::VM,
 };

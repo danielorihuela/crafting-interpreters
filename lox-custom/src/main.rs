@@ -3,7 +3,7 @@ use std::{fs, io::Write};
 use crate::vm::VM;
 
 mod compiler;
-mod memory;
+mod heap;
 mod scanner;
 mod types;
 mod vm;

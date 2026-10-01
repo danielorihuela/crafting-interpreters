@@ -4,7 +4,7 @@ use crate::types::value::function::ObjFunction;
 use crate::types::value::native::ObjNative;
 use crate::types::value::upvalue::ObjUpvalue;
 
-use crate::memory::heap::ObjId;
+use crate::heap::ObjId;
 use crate::vm::VM;
 
 pub enum HeapObj {
