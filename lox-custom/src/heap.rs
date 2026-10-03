@@ -88,38 +88,30 @@ impl Heap {
     }
 
     pub fn mark(&mut self, id: ObjId) -> bool {
-        if !self.contains(id) {
-            return false;
-        }
-
-        let slot = self.objects[id.0].as_mut().expect("slot should exist");
-        if slot.is_marked {
-            false
-        } else {
-            slot.is_marked = true;
-            true
+        match self.objects.get_mut(id.0) {
+            Some(Some(slot)) => {
+                if slot.is_marked {
+                    false
+                } else {
+                    slot.is_marked = true;
+                    true
+                }
+            }
+            _ => false,
         }
     }
 
     pub fn is_marked(&self, id: ObjId) -> bool {
-        if !self.contains(id) {
-            return false;
+        match self.objects.get(id.0) {
+            Some(Some(slot)) => slot.is_marked,
+            _ => false,
         }
-
-        self.objects[id.0]
-            .as_ref()
-            .expect("slot should exist")
-            .is_marked
     }
 
     pub fn clear_mark(&mut self, id: ObjId) {
-        if !self.contains(id) {
-            return;
+        if let Some(Some(slot)) = self.objects.get_mut(id.0) {
+            slot.is_marked = false;
         }
-        self.objects[id.0]
-            .as_mut()
-            .expect("slot should exist")
-            .is_marked = false;
     }
 
     pub fn iter_ids(&self) -> Vec<ObjId> {
