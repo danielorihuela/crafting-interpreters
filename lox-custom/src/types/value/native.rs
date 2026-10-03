@@ -1,7 +1,7 @@
 use crate::types::value::Value;
 use std::fmt::Display;
 
-pub type NativeFn = fn(usize, *mut Value) -> Value;
+pub type NativeFn = fn(usize, &[Value]) -> Value;
 
 pub struct ObjNative {
     pub function: NativeFn,

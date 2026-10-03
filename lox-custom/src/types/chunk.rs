@@ -1,4 +1,4 @@
-use crate::{types::value::Value, vm::VM};
+use crate::types::value::Value;
 
 #[derive(Default)]
 pub struct Chunk {
@@ -13,10 +13,8 @@ impl Chunk {
         self.lines.push(line);
     }
 
-    pub fn add_constant(&mut self, value: Value, vm: &mut VM) -> usize {
-        vm.stack.push(value.clone());
+    pub fn add_constant(&mut self, value: Value) -> usize {
         self.values.push(value);
-        vm.stack.pop();
 
         self.values.len() - 1
     }
@@ -24,7 +22,10 @@ impl Chunk {
 
 #[cfg(debug_assertions)]
 pub mod debug {
-    use crate::types::{opcode::OpCode, value::obj::HeapObj};
+    use crate::{
+        types::{opcode::OpCode, value::obj::HeapObj},
+        vm::VM,
+    };
 
     use super::*;
 
@@ -173,15 +174,13 @@ mod tests {
 
     #[test]
     fn test_chunk_add_constant() {
-        let mut vm = VM::new();
-
         let mut chunk = Chunk::default();
 
-        let index = chunk.add_constant(Value::Number(42.0), &mut vm);
+        let index = chunk.add_constant(Value::Number(42.0));
         assert_eq!(index, 0);
         assert_eq!(chunk.values[0], Value::Number(42.0));
 
-        let index = chunk.add_constant(Value::Number(84.0), &mut vm);
+        let index = chunk.add_constant(Value::Number(84.0));
         assert_eq!(index, 1);
         assert_eq!(chunk.values[1], Value::Number(84.0));
     }

@@ -690,7 +690,7 @@ impl VM {
                 native.function
             };
             let stack_base = self.stack.len() - arg_count;
-            let args = unsafe { self.stack.as_mut_ptr().add(stack_base) };
+            let args = &self.stack[stack_base..];
             let result = function(arg_count, args);
             self.stack.truncate(stack_base - 1);
             self.stack.push(result);
@@ -913,7 +913,7 @@ fn close_upvalues(vm: &mut VM, last: usize) {
     }
 }
 
-fn clock_native(_: usize, _: *mut Value) -> Value {
+fn clock_native(_: usize, _: &[Value]) -> Value {
     let elapsed = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()

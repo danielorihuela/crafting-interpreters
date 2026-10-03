@@ -1020,17 +1020,10 @@ impl<'src> Parser<'src> {
 
     fn emit_byte(&mut self, b: impl Into<u8>) {
         let function = self.compiler.as_ref().unwrap().borrow().function;
-        let function_ptr = {
-            let HeapObj::Function(function) = &mut self.vm.heap[function] else {
-                panic!("Expected a function object");
-            };
-            function as *mut ObjFunction
+        let HeapObj::Function(function) = &mut self.vm.heap[function] else {
+            panic!("Expected a function object");
         };
-        unsafe {
-            (*function_ptr)
-                .chunk
-                .write(b.into(), self.previous.line as usize);
-        }
+        function.chunk.write(b.into(), self.previous.line as usize);
     }
 
     fn emit_return(&mut self) {
@@ -1055,13 +1048,15 @@ impl<'src> Parser<'src> {
 
     fn make_constant(&mut self, value: Value) -> u8 {
         let function = self.compiler.as_ref().unwrap().borrow().function;
-        let function_ptr = {
+        let function = {
             let HeapObj::Function(function) = &mut self.vm.heap[function] else {
                 panic!("Expected a function object");
             };
-            function as *mut ObjFunction
+            function
         };
-        let constant = unsafe { (*function_ptr).chunk.add_constant(value, self.vm) };
+        self.vm.stack.push(value.clone());
+        let constant = function.chunk.add_constant(value);
+        self.vm.stack.pop();
         if constant > u8::MAX as usize {
             self.error("Too many constants in one chunk.");
             return 0;
