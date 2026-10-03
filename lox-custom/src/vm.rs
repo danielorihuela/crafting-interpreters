@@ -144,13 +144,13 @@ impl VM {
                         let HeapObj::Function(function) = &self.heap[function_id] else {
                             panic!("Expected function object");
                         };
-                        function.chunk.values[position].clone()
+                        function.chunk.values[position]
                     };
                     self.stack.push(value);
                 }
                 OpCode::Add => {
-                    let b = self.stack[self.stack.len() - 1].clone();
-                    let a = self.stack[self.stack.len() - 2].clone();
+                    let b = self.stack[self.stack.len() - 1];
+                    let a = self.stack[self.stack.len() - 2];
                     let result = if a.is_string() && b.is_string() {
                         let a_id = a.as_string();
                         let a_text = {
@@ -160,14 +160,11 @@ impl VM {
                             a_str.clone()
                         };
                         let b_id = b.as_string();
-                        let b_text = {
-                            let HeapObj::String(b_str) = &self.heap[b_id] else {
-                                panic!("Expected string object");
-                            };
-                            b_str.clone()
+                        let HeapObj::String(b_str) = &self.heap[b_id] else {
+                            panic!("Expected string object");
                         };
                         Ok(Value::Obj(Obj::String(
-                            self.allocate_string(&format!("{a_text}{b_text}")),
+                            self.allocate_string(&format!("{a_text}{b_str}")),
                         )))
                     } else {
                         a + b
@@ -248,8 +245,7 @@ impl VM {
                     let position = self.read_byte_from_frame(frame_index) as usize;
 
                     let name = self.read_constant_string_id(frame_index, position);
-                    self.globals
-                        .insert(name, self.stack[self.stack.len() - 1].clone());
+                    self.globals.insert(name, self.stack[self.stack.len() - 1]);
                     self.stack.pop().unwrap();
                 }
                 OpCode::GetGlobal => {
@@ -257,7 +253,7 @@ impl VM {
 
                     let name = self.read_constant_string_id(frame_index, position);
                     match self.globals.get(&name) {
-                        Some(value) => self.stack.push(value.clone()),
+                        Some(value) => self.stack.push(*value),
                         None => {
                             self.runtime_error(&format!(
                                 "Undefined variable '{}'.",
@@ -272,7 +268,7 @@ impl VM {
 
                     let name = self.read_constant_string_id(frame_index, position);
                     if let Entry::Occupied(mut entry) = self.globals.entry(name) {
-                        entry.insert(self.stack[self.stack.len() - 1].clone());
+                        entry.insert(self.stack[self.stack.len() - 1]);
                     } else {
                         self.runtime_error(&format!(
                             "Undefined variable '{}'.",
@@ -284,12 +280,12 @@ impl VM {
                 OpCode::GetLocal => {
                     let slot = self.read_byte_from_frame(frame_index) as usize;
                     let slots = self.frames[frame_index].slots;
-                    self.stack.push(self.stack[slots + slot].clone());
+                    self.stack.push(self.stack[slots + slot]);
                 }
                 OpCode::SetLocal => {
                     let slot = self.read_byte_from_frame(frame_index) as usize;
                     let slots = self.frames[frame_index].slots;
-                    self.stack[slots + slot] = self.stack[self.stack.len() - 1].clone();
+                    self.stack[slots + slot] = self.stack[self.stack.len() - 1];
                 }
                 OpCode::JumpIfFalse => {
                     let offset_0 = self.read_byte_from_frame(frame_index) as usize;
@@ -313,7 +309,7 @@ impl VM {
                 OpCode::Call => {
                     let arg_count = self.read_byte_from_frame(frame_index) as usize;
 
-                    let callee = self.stack[self.stack.len() - 1 - arg_count].clone();
+                    let callee = self.stack[self.stack.len() - 1 - arg_count];
                     if !self.call_value(callee, arg_count) {
                         return InterpretResult::RuntimeError;
                     }
@@ -374,9 +370,9 @@ impl VM {
                             panic!("Expected upvalue object");
                         };
                         if upvalue.location != -1 {
-                            self.stack[upvalue.location as usize].clone()
+                            self.stack[upvalue.location as usize]
                         } else {
-                            upvalue.closed.clone()
+                            upvalue.closed
                         }
                     };
                     self.stack.push(value);
@@ -396,10 +392,9 @@ impl VM {
                         panic!("Expected upvalue object");
                     };
                     if upvalue.location != -1 {
-                        self.stack[upvalue.location as usize] =
-                            self.stack[self.stack.len() - 1].clone();
+                        self.stack[upvalue.location as usize] = self.stack[self.stack.len() - 1];
                     } else {
-                        upvalue.closed = self.stack[self.stack.len() - 1].clone();
+                        upvalue.closed = self.stack[self.stack.len() - 1];
                     }
                 }
                 OpCode::CloseUpvalue => {
@@ -429,7 +424,7 @@ impl VM {
                         let HeapObj::Instance(instance) = &self.heap[instance_id] else {
                             panic!("Expected instance object");
                         };
-                        instance.fields.get(&name).cloned()
+                        instance.fields.get(&name).copied()
                     };
 
                     if let Some(v) = field_value {
@@ -458,12 +453,12 @@ impl VM {
                     let name_position = self.read_byte_from_frame(frame_index) as usize;
 
                     let name = self.read_constant_string_id(frame_index, name_position);
-                    let value = self.stack[self.stack.len() - 1].clone();
+                    let value = self.stack[self.stack.len() - 1];
 
                     let HeapObj::Instance(instance) = &mut self.heap[instance_id] else {
                         panic!("Expected instance object");
                     };
-                    instance.fields.insert(name, value.clone());
+                    instance.fields.insert(name, value);
 
                     self.stack.pop().unwrap();
                     self.stack.pop().unwrap();
@@ -474,7 +469,7 @@ impl VM {
 
                     let name = self.read_constant_string_id(frame_index, name_position);
                     let class_id = self.stack[self.stack.len() - 2].as_class();
-                    let method = self.stack[self.stack.len() - 1].clone();
+                    let method = self.stack[self.stack.len() - 1];
 
                     let HeapObj::Class(class) = &mut self.heap[class_id] else {
                         panic!("Expected class object");
@@ -493,7 +488,7 @@ impl VM {
                     }
                 }
                 OpCode::Inherit => {
-                    let superclass = self.stack[self.stack.len() - 2].clone();
+                    let superclass = self.stack[self.stack.len() - 2];
                     if !superclass.is_class() {
                         self.runtime_error("Superclass must be a class.");
                         return InterpretResult::RuntimeError;
@@ -584,7 +579,7 @@ impl VM {
             let HeapObj::Function(function) = &self.heap[function_id] else {
                 panic!("Expected function object");
             };
-            function.chunk.values[position].clone()
+            function.chunk.values[position]
         };
         value.as_string()
     }
@@ -595,7 +590,7 @@ impl VM {
             let HeapObj::Function(function) = &self.heap[function_id] else {
                 panic!("Expected function object");
             };
-            function.chunk.values[position].clone()
+            function.chunk.values[position]
         };
         value.as_function()
     }
@@ -608,7 +603,7 @@ impl VM {
     }
 
     fn invoke(&mut self, name: ObjId, arg_count: usize) -> bool {
-        let receiver = self.stack[self.stack.len() - 1 - arg_count].clone();
+        let receiver = self.stack[self.stack.len() - 1 - arg_count];
         if !receiver.is_instance() {
             self.runtime_error("Only instances have methods.");
             return false;
@@ -624,7 +619,7 @@ impl VM {
 
         if let Some(value) = field {
             let stack_len = self.stack.len();
-            self.stack[stack_len - arg_count - 1] = value.clone();
+            self.stack[stack_len - arg_count - 1] = value;
             return self.call_value(value, arg_count);
         }
 
@@ -701,7 +696,7 @@ impl VM {
                 let HeapObj::BoundMethod(bound_method) = &self.heap[bm_id] else {
                     panic!("Expected bound method object");
                 };
-                (bound_method.receiver.clone(), bound_method.method)
+                (bound_method.receiver, bound_method.method)
             };
             let stack_len = self.stack.len();
             self.stack[stack_len - arg_count - 1] = receiver;
@@ -817,7 +812,7 @@ fn bind_method(vm: &mut VM, class_id: ObjId, name: ObjId) -> Result<(), String> 
     };
 
     if let Some(m) = method {
-        let receiver = vm.stack[vm.stack.len() - 1].clone();
+        let receiver = vm.stack[vm.stack.len() - 1];
         let bound_method = vm.allocate(ObjBoundMethod::new(receiver, m.as_closure()));
         vm.stack.pop();
         vm.stack.push(Value::Obj(Obj::BoundMethod(bound_method)));
@@ -904,7 +899,7 @@ fn close_upvalues(vm: &mut VM, last: usize) {
             let HeapObj::Upvalue(upvalue) = &mut vm.heap[curr] else {
                 panic!("Expected upvalue object");
             };
-            upvalue.closed = vm.stack[location as usize].clone();
+            upvalue.closed = vm.stack[location as usize];
             upvalue.location = -1;
             vm.open_upvalues = upvalue.next;
         }
@@ -977,7 +972,7 @@ impl VM {
 
     fn mark_roots(&mut self) {
         for i in 0..self.stack.len() {
-            let value = self.stack[i].clone();
+            let value = self.stack[i];
             self.mark_value(&value);
         }
 
@@ -998,7 +993,7 @@ impl VM {
         let global_roots: Vec<(ObjId, Value)> = self
             .globals
             .iter()
-            .map(|(key, value)| (*key, value.clone()))
+            .map(|(key, value)| (*key, *value))
             .collect();
         for (name, value) in global_roots {
             self.mark_object(name);
@@ -1057,12 +1052,12 @@ impl VM {
             HeapObj::String(_) => {}
             HeapObj::Native(_) => {}
             HeapObj::Upvalue(upvalue) => {
-                value_children.push(upvalue.closed.clone());
+                value_children.push(upvalue.closed);
             }
             HeapObj::Function(function) => {
                 children.push(function.name);
                 for i in 0..function.chunk.values.len() {
-                    value_children.push(function.chunk.values[i].clone());
+                    value_children.push(function.chunk.values[i]);
                 }
             }
             HeapObj::Closure(closure) => {
@@ -1075,18 +1070,18 @@ impl VM {
                 children.push(class.name);
                 for (name, method) in &class.methods {
                     children.push(*name);
-                    value_children.push(method.clone());
+                    value_children.push(*method);
                 }
             }
             HeapObj::Instance(instance) => {
                 children.push(instance.class);
                 for (name, value) in &instance.fields {
                     children.push(*name);
-                    value_children.push(value.clone());
+                    value_children.push(*value);
                 }
             }
             HeapObj::BoundMethod(bound_method) => {
-                value_children.push(bound_method.receiver.clone());
+                value_children.push(bound_method.receiver);
                 children.push(bound_method.method);
             }
         }

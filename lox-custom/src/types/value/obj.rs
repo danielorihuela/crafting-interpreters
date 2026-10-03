@@ -66,7 +66,7 @@ impl From<ObjBoundMethod> for HeapObj {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Obj {
     String(ObjId),
     Function(ObjId),

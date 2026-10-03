@@ -12,7 +12,7 @@ use std::{
 
 use crate::{heap::ObjId, types::value::obj::Obj, vm::VM};
 
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
 pub enum Value {
     Nil,
     Bool(bool),
