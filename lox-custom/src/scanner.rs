@@ -28,49 +28,16 @@ impl<'src> Scanner<'src> {
         let c = self.peek();
         self.advance();
         match c {
-            b'(' => self.make_token(TokenType::LeftParen),
-            b')' => self.make_token(TokenType::RightParen),
-            b'{' => self.make_token(TokenType::LeftBrace),
-            b'}' => self.make_token(TokenType::RightBrace),
-            b',' => self.make_token(TokenType::Comma),
-            b'.' => self.make_token(TokenType::Dot),
-            b'-' => self.make_token(TokenType::Minus),
-            b'+' => self.make_token(TokenType::Plus),
-            b';' => self.make_token(TokenType::Semicolon),
-            b'?' => self.make_token(TokenType::QuestionMark),
-            b':' => self.make_token(TokenType::Colon),
-            b'/' => self.make_token(TokenType::Slash),
-            b'*' => self.make_token(TokenType::Star),
-            b'!' => {
+            b'(' | b')' | b'{' | b'}' | b',' | b'.' | b'-' | b'+' | b';' | b'?' | b':' | b'/'
+            | b'*' => self.make_token(TokenType::from_byte(c).expect("Valid char")),
+            b'!' | b'=' | b'<' | b'>' => {
                 if !self.is_end() && self.peek() == b'=' {
                     self.advance();
-                    self.make_token(TokenType::BangEqual)
+                    self.make_token(
+                        TokenType::from_byte_array(&[c, b'=']).expect("Valid comparison"),
+                    )
                 } else {
-                    self.make_token(TokenType::Bang)
-                }
-            }
-            b'=' => {
-                if !self.is_end() && self.peek() == b'=' {
-                    self.advance();
-                    self.make_token(TokenType::EqualEqual)
-                } else {
-                    self.make_token(TokenType::Equal)
-                }
-            }
-            b'<' => {
-                if !self.is_end() && self.peek() == b'=' {
-                    self.advance();
-                    self.make_token(TokenType::LessEqual)
-                } else {
-                    self.make_token(TokenType::Less)
-                }
-            }
-            b'>' => {
-                if !self.is_end() && self.peek() == b'=' {
-                    self.advance();
-                    self.make_token(TokenType::GreaterEqual)
-                } else {
-                    self.make_token(TokenType::Greater)
+                    self.make_token(TokenType::from_byte(c).expect("Valid char"))
                 }
             }
             b'"' => self.string(),
@@ -151,37 +118,7 @@ impl<'src> Scanner<'src> {
         }
 
         let lexeme = &self.source[self.start..self.current];
-        let identifier_type = match lexeme.len() {
-            2 => match lexeme[0] {
-                b'i' if lexeme == b"if" => TokenType::If,
-                b'o' if lexeme == b"or" => TokenType::Or,
-                _ => TokenType::Identifier,
-            },
-            3 => match lexeme[0] {
-                b'a' if lexeme == b"and" => TokenType::And,
-                b'f' if lexeme == b"for" => TokenType::For,
-                b'f' if lexeme == b"fun" => TokenType::Fun,
-                b'n' if lexeme == b"nil" => TokenType::Nil,
-                b'v' if lexeme == b"var" => TokenType::Var,
-                _ => TokenType::Identifier,
-            },
-            4 => match lexeme[0] {
-                b'e' if lexeme == b"else" => TokenType::Else,
-                b't' if lexeme == b"this" => TokenType::This,
-                b't' if lexeme == b"true" => TokenType::True,
-                _ => TokenType::Identifier,
-            },
-            5 => match lexeme[0] {
-                b'c' if lexeme == b"class" => TokenType::Class,
-                b'f' if lexeme == b"false" => TokenType::False,
-                b'p' if lexeme == b"print" => TokenType::Print,
-                b's' if lexeme == b"super" => TokenType::Super,
-                b'w' if lexeme == b"while" => TokenType::While,
-                _ => TokenType::Identifier,
-            },
-            6 if lexeme[0] == b'r' && lexeme == b"return" => TokenType::Return,
-            _ => TokenType::Identifier,
-        };
+        let identifier_type = TokenType::from_byte_array(lexeme).unwrap_or(TokenType::Identifier);
 
         self.make_token(identifier_type)
     }
@@ -328,7 +265,6 @@ mod tests {
         }
     }
 
-    #[cfg_attr(miri, ignore)]
     #[test]
     fn test_bench() {
         let input = include_str!("../../benchmark.lox");
