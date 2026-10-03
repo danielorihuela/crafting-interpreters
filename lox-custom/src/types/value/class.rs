@@ -1,6 +1,5 @@
-use std::collections::HashMap;
-
 use crate::{
+    HashMap,
     heap::ObjId,
     types::value::{Value, obj::HeapObj},
     vm::VM,
@@ -15,7 +14,7 @@ impl ObjClass {
     pub fn new(name: ObjId) -> Self {
         Self {
             name,
-            methods: HashMap::new(),
+            methods: HashMap::default(),
         }
     }
 
@@ -37,7 +36,7 @@ impl ObjInstance {
     pub fn new(class: ObjId) -> Self {
         Self {
             class,
-            fields: HashMap::new(),
+            fields: HashMap::default(),
         }
     }
 

@@ -1,4 +1,6 @@
-use std::{fs, io::Write};
+use std::{collections::HashMap as StdHashMap, fs, hash::BuildHasherDefault, io::Write};
+
+use hashers::fx_hash::FxHasher64;
 
 use crate::vm::VM;
 
@@ -7,6 +9,8 @@ mod heap;
 mod scanner;
 mod types;
 mod vm;
+
+pub type HashMap<K, V> = StdHashMap<K, V, BuildHasherDefault<FxHasher64>>;
 
 pub const DEBUG_STRESS_GC: bool = false;
 pub const DEBUG_LOG_GC: bool = false;

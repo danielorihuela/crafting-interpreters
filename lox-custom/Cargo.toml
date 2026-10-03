@@ -6,3 +6,4 @@ edition = "2024"
 [dependencies]
 paste = "1"
 strum = { version = "0.28", features = ["derive"] }
+hashers = "1.0.1"

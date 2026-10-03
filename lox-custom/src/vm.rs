@@ -1,12 +1,12 @@
 use std::{
     cell::RefCell,
-    collections::HashMap,
+    collections::hash_map::Entry,
     rc::Rc,
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use crate::{
-    DEBUG_LOG_GC,
+    DEBUG_LOG_GC, HashMap,
     compiler::{Compiler, FunctionType, Parser},
     heap::{Heap, ObjId},
     scanner::Scanner,
@@ -61,12 +61,12 @@ impl VM {
         let mut vm = VM {
             heap: Heap::new(),
             stack: Vec::new(),
-            strings: StringsTable::new(),
+            strings: StringsTable::default(),
             frames: [(); FRAMES_MAX].map(|_| call_frame.clone()),
             frame_count: 0,
             open_upvalues: ObjId::null(),
             compiler: None,
-            globals: GlobalsTable::new(),
+            globals: GlobalsTable::default(),
             gray_stack: Vec::new(),
             bytes_allocated: 0,
             next_gc: 1024 * 1024,
@@ -271,9 +271,7 @@ impl VM {
                     let position = self.read_byte_from_frame(frame_index) as usize;
 
                     let name = self.read_constant_string_id(frame_index, position);
-                    if let std::collections::hash_map::Entry::Occupied(mut entry) =
-                        self.globals.entry(name)
-                    {
+                    if let Entry::Occupied(mut entry) = self.globals.entry(name) {
                         entry.insert(self.stack[self.stack.len() - 1].clone());
                     } else {
                         self.runtime_error(&format!(
