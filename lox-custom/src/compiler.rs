@@ -190,6 +190,7 @@ impl<'src> Parser<'src> {
             self.vm,
         )));
         self.compiler = Some(compiler.clone());
+        self.vm.compiler = Some(compiler.clone());
 
         self.begin_scope();
 
@@ -664,10 +665,12 @@ impl<'src> Parser<'src> {
         let function = self.compiler.as_ref().unwrap().borrow().function;
         let enclosing = self.compiler.as_ref().unwrap().borrow().enclosing.clone();
         if self.compiler.as_ref().unwrap().borrow().enclosing.is_none() {
+            self.vm.compiler = Some(self.compiler.clone().unwrap());
             return function;
         }
 
-        self.compiler = enclosing;
+        self.compiler = enclosing.clone();
+        self.vm.compiler = enclosing;
 
         function
     }

@@ -12,7 +12,6 @@ mod vm;
 
 pub type HashMap<K, V> = StdHashMap<K, V, BuildHasherDefault<FxHasher64>>;
 
-pub const DEBUG_STRESS_GC: bool = false;
 pub const DEBUG_LOG_GC: bool = false;
 
 fn main() {
