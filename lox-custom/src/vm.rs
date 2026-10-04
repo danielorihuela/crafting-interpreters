@@ -86,7 +86,7 @@ impl VM {
         let compiler = Compiler::new(FunctionType::Script, None, "", self);
         self.compiler = Some(Rc::new(RefCell::new(compiler)));
 
-        let parser = &mut Parser::new(scanner, self.compiler.clone(), self);
+        let parser = &mut Parser::new(scanner, self);
         let function_id = parser.compile();
 
         if function_id.is_null() {
