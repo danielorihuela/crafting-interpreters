@@ -54,6 +54,7 @@ impl VM {
     pub fn new() -> Self {
         let call_frame = CallFrame {
             closure: ObjId::null(),
+            function: ObjId::null(),
             ip: 0,
             slots: 0,
         };
@@ -62,7 +63,7 @@ impl VM {
             heap: Heap::new(),
             stack: Vec::new(),
             strings: StringsTable::default(),
-            frames: [(); FRAMES_MAX].map(|_| call_frame.clone()),
+            frames: [call_frame; FRAMES_MAX],
             frame_count: 0,
             open_upvalues: ObjId::null(),
             compiler: None,
@@ -123,10 +124,7 @@ impl VM {
                 println!();
 
                 let frame = &self.frames[frame_index];
-                let HeapObj::Closure(closure) = &self.heap[frame.closure] else {
-                    panic!("Expected closure");
-                };
-                let HeapObj::Function(function) = &self.heap[closure.function_id] else {
+                let HeapObj::Function(function) = &self.heap[frame.function] else {
                     panic!("Expected function");
                 };
 
@@ -542,11 +540,8 @@ impl VM {
 
     fn read_byte_from_frame(&mut self, frame_index: usize) -> u8 {
         let ip = self.frames[frame_index].ip;
-        let closure_id = self.frames[frame_index].closure;
-        let HeapObj::Closure(closure) = &self.heap[closure_id] else {
-            panic!("Expected closure object");
-        };
-        let HeapObj::Function(function) = &self.heap[closure.function_id] else {
+        let function_id = self.frames[frame_index].function;
+        let HeapObj::Function(function) = &self.heap[function_id] else {
             panic!("Expected function object");
         };
         let byte = function.chunk.code[ip];
@@ -566,11 +561,7 @@ impl VM {
     }
 
     fn frame_function_id(&self, frame_index: usize) -> ObjId {
-        let closure_id = self.frames[frame_index].closure;
-        let HeapObj::Closure(closure) = &self.heap[closure_id] else {
-            panic!("Expected closure object");
-        };
-        closure.function_id
+        self.frames[frame_index].function
     }
 
     fn read_constant_string_id(&self, frame_index: usize, position: usize) -> ObjId {
@@ -614,7 +605,7 @@ impl VM {
             let HeapObj::Instance(instance) = &self.heap[instance_id] else {
                 panic!("Expected instance object");
             };
-            instance.fields.get(&name).cloned()
+            instance.fields.get(&name).copied()
         };
 
         if let Some(value) = field {
@@ -638,7 +629,7 @@ impl VM {
             let HeapObj::Class(class) = &self.heap[class_id] else {
                 panic!("Expected class object");
             };
-            class.methods.get(&name).cloned()
+            class.methods.get(&name).copied()
         };
 
         if let Some(value) = method {
@@ -663,7 +654,7 @@ impl VM {
                 let HeapObj::Class(class) = &self.heap[class_id] else {
                     panic!("Expected class object");
                 };
-                class.methods.get(&self.init_string).cloned()
+                class.methods.get(&self.init_string).copied()
             };
 
             if let Some(initializer) = initializer {
@@ -738,6 +729,7 @@ impl VM {
         let frame = &mut self.frames[self.frame_count as usize];
         self.frame_count += 1;
         frame.closure = closure_id;
+        frame.function = function_id;
         frame.ip = 0;
         let stack_base = self.stack.len() - arg_count - 1;
         frame.slots = stack_base;
@@ -764,13 +756,7 @@ impl VM {
 
         for i in (0..self.frame_count).rev() {
             let frame = &self.frames[i as usize];
-            let function_id = {
-                let HeapObj::Closure(closure) = &self.heap[frame.closure] else {
-                    break;
-                };
-                closure.function_id
-            };
-            let HeapObj::Function(function) = &self.heap[function_id] else {
+            let HeapObj::Function(function) = &self.heap[frame.function] else {
                 break;
             };
 
@@ -808,7 +794,7 @@ fn bind_method(vm: &mut VM, class_id: ObjId, name: ObjId) -> Result<(), String> 
         let HeapObj::Class(class) = &vm.heap[class_id] else {
             panic!("Expected class object");
         };
-        class.methods.get(&name).cloned()
+        class.methods.get(&name).copied()
     };
 
     if let Some(m) = method {
@@ -931,9 +917,10 @@ impl InterpretResult {
     }
 }
 
-#[derive(Clone)]
+#[derive(Copy, Clone)]
 pub struct CallFrame {
     pub closure: ObjId,
+    pub function: ObjId,
     pub ip: usize,
     pub slots: usize,
 }
