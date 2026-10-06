@@ -22,10 +22,7 @@ impl Chunk {
 
 #[cfg(debug_assertions)]
 pub mod debug {
-    use crate::{
-        types::{opcode::OpCode, value::obj::HeapObj},
-        vm::VM,
-    };
+    use crate::{types::opcode::OpCode, vm::VM};
 
     use super::*;
 
@@ -92,9 +89,7 @@ pub mod debug {
                 );
 
                 let function = value.as_function();
-                let HeapObj::Function(function) = &vm.heap[function] else {
-                    panic!("Expected a function object");
-                };
+                let function = vm.heap.function(function);
                 for _ in 0..function.upvalue_count {
                     curr_offset += 1;
                     let is_local = chunk.code[curr_offset];

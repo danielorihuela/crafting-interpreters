@@ -86,26 +86,15 @@ impl PartialOrd for Obj {
 
 impl Obj {
     pub fn to_string(&self, vm: &VM) -> String {
-        let id = match self {
-            Obj::String(id) => id,
-            Obj::Function(id) => id,
-            Obj::Closure(id) => id,
-            Obj::Native(id) => id,
-            Obj::Upvalue(id) => id,
-            Obj::Class(id) => id,
-            Obj::Instance(id) => id,
-            Obj::BoundMethod(id) => id,
-        };
-
-        match &vm.heap[*id] {
-            HeapObj::String(s) => s.clone(),
-            HeapObj::Function(f) => f.to_string(vm),
-            HeapObj::Closure(c) => c.to_string(vm),
-            HeapObj::Native(n) => n.to_string(),
-            HeapObj::Upvalue(u) => u.to_string(),
-            HeapObj::Class(c) => c.to_string(vm),
-            HeapObj::Instance(i) => i.to_string(vm),
-            HeapObj::BoundMethod(b) => b.to_string(vm),
+        match self {
+            Obj::String(id) => vm.heap.string(*id).clone(),
+            Obj::Function(id) => vm.heap.function(*id).to_string(vm),
+            Obj::Closure(id) => vm.heap.closure(*id).to_string(vm),
+            Obj::Native(id) => vm.heap.native(*id).to_string(),
+            Obj::Upvalue(id) => vm.heap.upvalue(*id).to_string(),
+            Obj::Class(id) => vm.heap.class(*id).to_string(vm),
+            Obj::Instance(id) => vm.heap.instance(*id).to_string(vm),
+            Obj::BoundMethod(id) => vm.heap.bound_method(*id).to_string(vm),
         }
     }
 }

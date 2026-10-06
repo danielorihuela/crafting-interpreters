@@ -7,11 +7,7 @@ use crate::{
         TokenType,
         opcode::OpCode,
         token::Token,
-        value::{
-            Value,
-            function::ObjFunction,
-            obj::{HeapObj, Obj},
-        },
+        value::{Value, function::ObjFunction, obj::Obj},
     },
     vm::VM,
 };
@@ -193,10 +189,7 @@ impl<'src> Parser<'src> {
             loop {
                 let arity = {
                     let curr_compiler = compiler.borrow();
-                    let HeapObj::Function(function) = &mut self.vm.heap[curr_compiler.function]
-                    else {
-                        panic!("Expected a function object");
-                    };
+                    let function = self.vm.heap.function_mut(curr_compiler.function);
                     function.arity += 1;
 
                     function.arity
@@ -223,12 +216,7 @@ impl<'src> Parser<'src> {
         let constant = self.make_constant(Value::Obj(Obj::Function(function)));
         self.emit_bytes(OpCode::Closure, constant);
 
-        let upvalue_count = {
-            let HeapObj::Function(function) = &self.vm.heap[function] else {
-                panic!("Expected a function object");
-            };
-            function.upvalue_count
-        };
+        let upvalue_count = self.vm.heap.function(function).upvalue_count;
 
         let curr_compiler = compiler.borrow_mut();
         for i in 0..upvalue_count {
@@ -505,11 +493,10 @@ impl<'src> Parser<'src> {
             self.error("Too much code to jump over.");
         }
 
-        let HeapObj::Function(function) =
-            &mut self.vm.heap[self.vm.compiler.as_ref().unwrap().borrow().function]
-        else {
-            panic!("Expected a function object");
-        };
+        let function = self
+            .vm
+            .heap
+            .function_mut(self.vm.compiler.as_ref().unwrap().borrow().function);
         function.chunk.code[offset] = ((jump >> 8) & 0xff) as u8;
         function.chunk.code[offset + 1] = (jump & 0xff) as u8;
     }
@@ -636,18 +623,13 @@ impl<'src> Parser<'src> {
         {
             if !self.had_error {
                 let function_id = self.vm.compiler.as_ref().unwrap().borrow().function;
-                let HeapObj::Function(function) = &self.vm.heap[function_id] else {
-                    panic!("Expected a function object");
-                };
+                let function = self.vm.heap.function(function_id);
 
                 let name = {
                     if function.name.is_null() {
                         "script".to_string()
                     } else {
-                        let HeapObj::String(name) = &self.vm.heap[function.name] else {
-                            panic!("Expected a string object");
-                        };
-                        name.to_string()
+                        self.vm.heap.string(function.name).to_string()
                     }
                 };
 
@@ -1031,9 +1013,7 @@ impl<'src> Parser<'src> {
 
     fn emit_byte(&mut self, b: impl Into<u8>) {
         let function = self.vm.compiler.as_ref().unwrap().borrow().function;
-        let HeapObj::Function(function) = &mut self.vm.heap[function] else {
-            panic!("Expected a function object");
-        };
+        let function = self.vm.heap.function_mut(function);
         function.chunk.write(b.into(), self.previous.line as usize);
     }
 
@@ -1059,12 +1039,7 @@ impl<'src> Parser<'src> {
 
     fn make_constant(&mut self, value: Value) -> u8 {
         let function = self.vm.compiler.as_ref().unwrap().borrow().function;
-        let function = {
-            let HeapObj::Function(function) = &mut self.vm.heap[function] else {
-                panic!("Expected a function object");
-            };
-            function
-        };
+        let function = self.vm.heap.function_mut(function);
         self.vm.stack.push(value.clone());
         let constant = function.chunk.add_constant(value);
         self.vm.stack.pop();
@@ -1106,11 +1081,10 @@ impl<'src> Parser<'src> {
     }
 
     fn current_chunk_code_count(&self) -> usize {
-        let HeapObj::Function(function) =
-            &self.vm.heap[self.vm.compiler.as_ref().unwrap().borrow().function]
-        else {
-            panic!("Expected a function object");
-        };
+        let function = self
+            .vm
+            .heap
+            .function(self.vm.compiler.as_ref().unwrap().borrow().function);
         function.chunk.code.len()
     }
 }
@@ -1140,12 +1114,7 @@ fn add_upvalue(
     is_local: bool,
 ) -> Result<isize, String> {
     let function_id = compiler.as_ref().unwrap().borrow().function;
-    let upvalue_count = {
-        let HeapObj::Function(function) = &vm.heap[function_id] else {
-            panic!("Expected a function object");
-        };
-        function.upvalue_count
-    };
+    let upvalue_count = vm.heap.function(function_id).upvalue_count;
 
     for i in 0..upvalue_count {
         let upvalue = &compiler.as_ref().unwrap().borrow().upvalues[i];
@@ -1161,9 +1130,7 @@ fn add_upvalue(
     compiler.as_ref().unwrap().borrow_mut().upvalues[upvalue_count].is_local = is_local;
     compiler.as_ref().unwrap().borrow_mut().upvalues[upvalue_count].index = index;
 
-    let HeapObj::Function(function) = &mut vm.heap[function_id] else {
-        panic!("Expected a function object");
-    };
+    let function = vm.heap.function_mut(function_id);
     let count = function.upvalue_count;
     function.upvalue_count += 1;
 
@@ -1269,9 +1236,7 @@ impl<'src> Compiler {
 
         if ftype != FunctionType::Script {
             let name_id = vm.allocate_string(data);
-            let HeapObj::Function(function) = &mut vm.heap[compiler.function] else {
-                panic!("Expected a function object");
-            };
+            let function = vm.heap.function_mut(compiler.function);
             function.name = name_id;
         }
 
@@ -1292,7 +1257,6 @@ mod tests {
     use super::*;
 
     use crate::types::chunk::Chunk;
-    use crate::types::value::obj::HeapObj;
 
     macro_rules! parse_tests {
         ($($name:ident: $value:expr,)*) => {
@@ -1313,9 +1277,7 @@ mod tests {
                     for byte in bytes {
                         expected.write(byte.into(), 1);
                     }
-                    let HeapObj::Function(function_obj) = &vm.heap[function] else {
-                        panic!("Expected a function object");
-                    };
+                    let function_obj = vm.heap.function(function);
                     assert_eq!(&function_obj.chunk.code, &expected.code);
                 }
             )*

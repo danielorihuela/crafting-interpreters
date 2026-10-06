@@ -1,4 +1,4 @@
-use crate::{heap::ObjId, types::value::obj::HeapObj, vm::VM};
+use crate::{heap::ObjId, vm::VM};
 
 pub struct ObjClosure {
     pub function_id: ObjId,
@@ -17,9 +17,7 @@ impl ObjClosure {
         if self.function_id.is_null() {
             "<script>".to_string()
         } else {
-            let HeapObj::Function(function) = &vm.heap[self.function_id] else {
-                panic!("Expected a function object");
-            };
+            let function = vm.heap.function(self.function_id);
             function.to_string(vm)
         }
     }

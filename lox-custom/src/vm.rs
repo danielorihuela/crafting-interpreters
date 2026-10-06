@@ -8,7 +8,7 @@ use std::{
 use crate::{
     DEBUG_LOG_GC, HashMap,
     compiler::{Compiler, FunctionType, Parser},
-    heap::{Heap, ObjId},
+    heap::{Heap, ObjId, ObjKind},
     scanner::Scanner,
     types::{
         opcode::OpCode,
@@ -60,10 +60,10 @@ impl VM {
         };
 
         let mut vm = VM {
-            heap: Heap::new(),
+            heap: Heap::default(),
             stack: Vec::new(),
             strings: StringsTable::default(),
-            frames: [call_frame; FRAMES_MAX],
+            frames: [(); FRAMES_MAX].map(|_| call_frame.clone()),
             frame_count: 0,
             open_upvalues: ObjId::null(),
             compiler: None,
@@ -95,9 +95,7 @@ impl VM {
         }
 
         self.stack.push(Value::Obj(Obj::Function(function_id)));
-        let HeapObj::Function(function) = &self.heap[function_id] else {
-            panic!("Expected a function object");
-        };
+        let function = self.heap.function(function_id);
         let closure_id = self.allocate(ObjClosure::new(function_id, function.upvalue_count));
         self.stack.pop().unwrap();
         self.stack.push(Value::Obj(Obj::Closure(closure_id)));
@@ -124,9 +122,7 @@ impl VM {
                 println!();
 
                 let frame = &self.frames[frame_index];
-                let HeapObj::Function(function) = &self.heap[frame.function] else {
-                    panic!("Expected function");
-                };
+                let function = self.heap.function(frame.function);
 
                 use crate::types::chunk::debug::disassemble_instruction;
                 let _ = disassemble_instruction(&function.chunk, frame.ip, self);
@@ -137,13 +133,7 @@ impl VM {
                 OpCode::Constant => {
                     let position = self.read_byte_from_frame(frame_index) as usize;
 
-                    let function_id = self.frame_function_id(frame_index);
-                    let value = {
-                        let HeapObj::Function(function) = &self.heap[function_id] else {
-                            panic!("Expected function object");
-                        };
-                        function.chunk.values[position]
-                    };
+                    let value = self.read_constant_from_frame(frame_index, position);
                     self.stack.push(value);
                 }
                 OpCode::Add => {
@@ -151,16 +141,9 @@ impl VM {
                     let a = self.stack[self.stack.len() - 2];
                     let result = if a.is_string() && b.is_string() {
                         let a_id = a.as_string();
-                        let a_text = {
-                            let HeapObj::String(a_str) = &self.heap[a_id] else {
-                                panic!("Expected string object");
-                            };
-                            a_str.clone()
-                        };
+                        let a_text = self.heap.string(a_id).clone();
                         let b_id = b.as_string();
-                        let HeapObj::String(b_str) = &self.heap[b_id] else {
-                            panic!("Expected string object");
-                        };
+                        let b_str = self.heap.string(b_id);
                         Ok(Value::Obj(Obj::String(
                             self.allocate_string(&format!("{a_text}{b_str}")),
                         )))
@@ -316,19 +299,12 @@ impl VM {
                     let position = self.read_byte_from_frame(frame_index) as usize;
 
                     let function_id = self.read_constant_function_id(frame_index, position);
-                    let HeapObj::Function(function) = &self.heap[function_id] else {
-                        panic!("Expected a function object");
-                    };
+                    let function = self.heap.function(function_id);
                     let closure_id =
                         self.allocate(ObjClosure::new(function_id, function.upvalue_count));
                     self.stack.push(Value::Obj(Obj::Closure(closure_id)));
 
-                    let upvalue_count = {
-                        let HeapObj::Function(function) = &self.heap[function_id] else {
-                            panic!("Expected string object");
-                        };
-                        function.upvalue_count
-                    };
+                    let upvalue_count = self.heap.function(function_id).upvalue_count;
 
                     for i in 0..upvalue_count {
                         let is_local = self.read_byte_from_frame(frame_index) != 0;
@@ -340,15 +316,11 @@ impl VM {
                             capture_upvalue(slots + index, self)
                         } else {
                             let parent_closure = self.frames[frame_index].closure;
-                            let HeapObj::Closure(parent) = &self.heap[parent_closure] else {
-                                panic!("Expected closure object");
-                            };
+                            let parent = self.heap.closure(parent_closure);
                             parent.upvalues[index]
                         };
 
-                        let HeapObj::Closure(closure) = &mut self.heap[closure_id] else {
-                            panic!("Expected closure object");
-                        };
+                        let closure = self.heap.closure_mut(closure_id);
                         closure.upvalues[i] = upvalue_id;
                     }
                 }
@@ -356,17 +328,10 @@ impl VM {
                     let slot = self.read_byte_from_frame(frame_index) as usize;
 
                     let closure_id = self.frames[frame_index].closure;
-                    let upvalue_id = {
-                        let HeapObj::Closure(closure) = &self.heap[closure_id] else {
-                            panic!("Expected closure object");
-                        };
-                        closure.upvalues[slot]
-                    };
+                    let upvalue_id = self.heap.closure(closure_id).upvalues[slot];
 
                     let value = {
-                        let HeapObj::Upvalue(upvalue) = &self.heap[upvalue_id] else {
-                            panic!("Expected upvalue object");
-                        };
+                        let upvalue = self.heap.upvalue(upvalue_id);
                         if upvalue.location != -1 {
                             self.stack[upvalue.location as usize]
                         } else {
@@ -379,16 +344,9 @@ impl VM {
                     let slot = self.read_byte_from_frame(frame_index) as usize;
 
                     let closure_id = self.frames[frame_index].closure;
-                    let upvalue_id = {
-                        let HeapObj::Closure(closure) = &self.heap[closure_id] else {
-                            panic!("Expected closure object");
-                        };
-                        closure.upvalues[slot]
-                    };
+                    let upvalue_id = self.heap.closure(closure_id).upvalues[slot];
 
-                    let HeapObj::Upvalue(upvalue) = &mut self.heap[upvalue_id] else {
-                        panic!("Expected upvalue object");
-                    };
+                    let upvalue = self.heap.upvalue_mut(upvalue_id);
                     if upvalue.location != -1 {
                         self.stack[upvalue.location as usize] = self.stack[self.stack.len() - 1];
                     } else {
@@ -419,9 +377,7 @@ impl VM {
                     let name = self.read_constant_string_id(frame_index, name_position);
 
                     let field_value = {
-                        let HeapObj::Instance(instance) = &self.heap[instance_id] else {
-                            panic!("Expected instance object");
-                        };
+                        let instance = self.heap.instance(instance_id);
                         instance.fields.get(&name).copied()
                     };
 
@@ -429,12 +385,7 @@ impl VM {
                         self.stack.pop().unwrap();
                         self.stack.push(v);
                     } else {
-                        let class_id = {
-                            let HeapObj::Instance(instance) = &self.heap[instance_id] else {
-                                panic!("Expected instance object");
-                            };
-                            instance.class
-                        };
+                        let class_id = self.heap.instance(instance_id).class;
                         if let Err(message) = bind_method(self, class_id, name) {
                             self.runtime_error(&message);
                             return InterpretResult::RuntimeError;
@@ -453,9 +404,7 @@ impl VM {
                     let name = self.read_constant_string_id(frame_index, name_position);
                     let value = self.stack[self.stack.len() - 1];
 
-                    let HeapObj::Instance(instance) = &mut self.heap[instance_id] else {
-                        panic!("Expected instance object");
-                    };
+                    let instance = self.heap.instance_mut(instance_id);
                     instance.fields.insert(name, value);
 
                     self.stack.pop().unwrap();
@@ -469,9 +418,7 @@ impl VM {
                     let class_id = self.stack[self.stack.len() - 2].as_class();
                     let method = self.stack[self.stack.len() - 1];
 
-                    let HeapObj::Class(class) = &mut self.heap[class_id] else {
-                        panic!("Expected class object");
-                    };
+                    let class = self.heap.class_mut(class_id);
                     class.methods.insert(name, method);
                     self.stack.pop().unwrap();
                 }
@@ -495,16 +442,9 @@ impl VM {
                     let superclass_id = superclass.as_class();
                     let subclass_id = self.stack[self.stack.len() - 1].as_class();
 
-                    let inherited = {
-                        let HeapObj::Class(superclass) = &self.heap[superclass_id] else {
-                            panic!("Expected class object");
-                        };
-                        superclass.methods.clone()
-                    };
+                    let inherited = self.heap.class(superclass_id).methods.clone();
 
-                    let HeapObj::Class(subclass) = &mut self.heap[subclass_id] else {
-                        panic!("Expected class object");
-                    };
+                    let subclass = self.heap.class_mut(subclass_id);
                     subclass.methods.extend(inherited);
                     self.stack.pop().unwrap();
                 }
@@ -539,13 +479,10 @@ impl VM {
     }
 
     fn read_byte_from_frame(&mut self, frame_index: usize) -> u8 {
-        let ip = self.frames[frame_index].ip;
-        let function_id = self.frames[frame_index].function;
-        let HeapObj::Function(function) = &self.heap[function_id] else {
-            panic!("Expected function object");
-        };
-        let byte = function.chunk.code[ip];
-        self.frames[frame_index].ip = ip + 1;
+        let frame = &mut self.frames[frame_index];
+        let ip = frame.ip;
+        let byte = self.heap.function(frame.function).chunk.code[ip];
+        frame.ip = ip + 1;
 
         byte
     }
@@ -560,37 +497,23 @@ impl VM {
         self.frames[frame_index].ip = ip - offset;
     }
 
-    fn frame_function_id(&self, frame_index: usize) -> ObjId {
-        self.frames[frame_index].function
+    fn read_constant_from_frame(&self, frame_index: usize, position: usize) -> Value {
+        let function = self.heap.function(self.frames[frame_index].function);
+        function.chunk.values[position]
     }
 
     fn read_constant_string_id(&self, frame_index: usize, position: usize) -> ObjId {
-        let function_id = self.frame_function_id(frame_index);
-        let value = {
-            let HeapObj::Function(function) = &self.heap[function_id] else {
-                panic!("Expected function object");
-            };
-            function.chunk.values[position]
-        };
+        let value = self.read_constant_from_frame(frame_index, position);
         value.as_string()
     }
 
     fn read_constant_function_id(&self, frame_index: usize, position: usize) -> ObjId {
-        let function_id = self.frame_function_id(frame_index);
-        let value = {
-            let HeapObj::Function(function) = &self.heap[function_id] else {
-                panic!("Expected function object");
-            };
-            function.chunk.values[position]
-        };
+        let value = self.read_constant_from_frame(frame_index, position);
         value.as_function()
     }
 
     fn string_text(&self, id: ObjId) -> String {
-        let HeapObj::String(s) = &self.heap[id] else {
-            panic!("Expected string object");
-        };
-        s.clone()
+        self.heap.string(id).clone()
     }
 
     fn invoke(&mut self, name: ObjId, arg_count: usize) -> bool {
@@ -602,9 +525,7 @@ impl VM {
 
         let instance_id = receiver.as_instance();
         let field = {
-            let HeapObj::Instance(instance) = &self.heap[instance_id] else {
-                panic!("Expected instance object");
-            };
+            let instance = self.heap.instance(instance_id);
             instance.fields.get(&name).copied()
         };
 
@@ -614,21 +535,14 @@ impl VM {
             return self.call_value(value, arg_count);
         }
 
-        let class_id = {
-            let HeapObj::Instance(instance) = &self.heap[instance_id] else {
-                panic!("Expected instance object");
-            };
-            instance.class
-        };
+        let class_id = self.heap.instance(instance_id).class;
 
         self.invoke_from_class(class_id, name, arg_count)
     }
 
     fn invoke_from_class(&mut self, class_id: ObjId, name: ObjId, arg_count: usize) -> bool {
         let method = {
-            let HeapObj::Class(class) = &self.heap[class_id] else {
-                panic!("Expected class object");
-            };
+            let class = self.heap.class(class_id);
             class.methods.get(&name).copied()
         };
 
@@ -651,9 +565,7 @@ impl VM {
             self.stack[stack_len - arg_count - 1] = instance_value;
 
             let initializer = {
-                let HeapObj::Class(class) = &self.heap[class_id] else {
-                    panic!("Expected class object");
-                };
+                let class = self.heap.class(class_id);
                 class.methods.get(&self.init_string).copied()
             };
 
@@ -667,12 +579,7 @@ impl VM {
             true
         } else if callee.is_native() {
             let native_id = callee.as_native();
-            let function = {
-                let HeapObj::Native(native) = &self.heap[native_id] else {
-                    panic!("Expected native object");
-                };
-                native.function
-            };
+            let function = self.heap.native(native_id).function;
             let stack_base = self.stack.len() - arg_count;
             let args = &self.stack[stack_base..];
             let result = function(arg_count, args);
@@ -683,12 +590,8 @@ impl VM {
             self.call(callee.as_closure(), arg_count)
         } else if callee.is_bound_method() {
             let bm_id = callee.as_bound_method();
-            let (receiver, method) = {
-                let HeapObj::BoundMethod(bound_method) = &self.heap[bm_id] else {
-                    panic!("Expected bound method object");
-                };
-                (bound_method.receiver, bound_method.method)
-            };
+            let bound_method = self.heap.bound_method(bm_id);
+            let (receiver, method) = (bound_method.receiver, bound_method.method);
             let stack_len = self.stack.len();
             self.stack[stack_len - arg_count - 1] = receiver;
             self.call(method, arg_count)
@@ -699,19 +602,9 @@ impl VM {
     }
 
     fn call(&mut self, closure_id: ObjId, arg_count: usize) -> bool {
-        let function_id = {
-            let HeapObj::Closure(closure) = &self.heap[closure_id] else {
-                panic!("Expected closure object");
-            };
-            closure.function_id
-        };
+        let function_id = self.heap.closure(closure_id).function_id;
 
-        let arity = {
-            let HeapObj::Function(function) = &self.heap[function_id] else {
-                panic!("Expected function object");
-            };
-            function.arity
-        };
+        let arity = self.heap.function(function_id).arity;
 
         if arg_count != arity {
             self.runtime_error(&format!(
@@ -746,7 +639,7 @@ impl VM {
         self.reset_stack();
         self.globals.clear();
         self.strings.clear();
-        self.heap.clear();
+        self.heap = Heap::default();
         self.compiler = None;
         self.init_string = ObjId::null();
     }
@@ -756,9 +649,7 @@ impl VM {
 
         for i in (0..self.frame_count).rev() {
             let frame = &self.frames[i as usize];
-            let HeapObj::Function(function) = &self.heap[frame.function] else {
-                break;
-            };
+            let function = self.heap.function(frame.function);
 
             let instruction = frame.ip - 1;
             let line = function.chunk.lines[instruction];
@@ -791,9 +682,7 @@ impl VM {
 
 fn bind_method(vm: &mut VM, class_id: ObjId, name: ObjId) -> Result<(), String> {
     let method = {
-        let HeapObj::Class(class) = &vm.heap[class_id] else {
-            panic!("Expected class object");
-        };
+        let class = vm.heap.class(class_id);
         class.methods.get(&name).copied()
     };
 
@@ -813,34 +702,19 @@ fn capture_upvalue(local: usize, vm: &mut VM) -> ObjId {
     let mut curr = vm.open_upvalues;
 
     while !curr.is_null() {
-        let curr_location = {
-            let HeapObj::Upvalue(upvalue) = &vm.heap[curr] else {
-                panic!("Expected upvalue object");
-            };
-            upvalue.location
-        };
+        let curr_location = vm.heap.upvalue(curr).location;
 
         if curr_location <= local as isize {
             break;
         }
 
         prev = curr;
-        let next = {
-            let HeapObj::Upvalue(upvalue) = &vm.heap[curr] else {
-                panic!("Expected upvalue object");
-            };
-            upvalue.next
-        };
+        let next = vm.heap.upvalue(curr).next;
         curr = next;
     }
 
     if !curr.is_null() {
-        let existing_location = {
-            let HeapObj::Upvalue(upvalue) = &vm.heap[curr] else {
-                panic!("Expected upvalue object");
-            };
-            upvalue.location
-        };
+        let existing_location = vm.heap.upvalue(curr).location;
 
         if existing_location == local as isize {
             return curr;
@@ -849,18 +723,14 @@ fn capture_upvalue(local: usize, vm: &mut VM) -> ObjId {
 
     let created = vm.allocate(ObjUpvalue::new(local as isize));
     {
-        let HeapObj::Upvalue(upvalue) = &mut vm.heap[created] else {
-            panic!("Expected upvalue object");
-        };
+        let upvalue = vm.heap.upvalue_mut(created);
         upvalue.next = curr;
     }
 
     if prev.is_null() {
         vm.open_upvalues = created;
     } else {
-        let HeapObj::Upvalue(prev_upvalue) = &mut vm.heap[prev] else {
-            panic!("Expected upvalue object");
-        };
+        let prev_upvalue = vm.heap.upvalue_mut(prev);
         prev_upvalue.next = created;
     }
 
@@ -870,21 +740,14 @@ fn capture_upvalue(local: usize, vm: &mut VM) -> ObjId {
 fn close_upvalues(vm: &mut VM, last: usize) {
     while !vm.open_upvalues.is_null() {
         let curr = vm.open_upvalues;
-        let location = {
-            let HeapObj::Upvalue(upvalue) = &vm.heap[curr] else {
-                panic!("Expected upvalue object");
-            };
-            upvalue.location
-        };
+        let location = vm.heap.upvalue(curr).location;
 
         if location < last as isize {
             break;
         }
 
         {
-            let HeapObj::Upvalue(upvalue) = &mut vm.heap[curr] else {
-                panic!("Expected upvalue object");
-            };
+            let upvalue = vm.heap.upvalue_mut(curr);
             upvalue.closed = vm.stack[location as usize];
             upvalue.location = -1;
             vm.open_upvalues = upvalue.next;
@@ -917,7 +780,7 @@ impl InterpretResult {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 pub struct CallFrame {
     pub closure: ObjId,
     pub function: ObjId,
@@ -971,9 +834,7 @@ impl VM {
         while !next_upvalue.is_null() {
             self.mark_object(next_upvalue);
 
-            let HeapObj::Upvalue(upvalue) = &self.heap[next_upvalue] else {
-                break;
-            };
+            let upvalue = self.heap.upvalue(next_upvalue);
             next_upvalue = upvalue.next;
         }
 
@@ -1035,39 +896,45 @@ impl VM {
         let mut children = Vec::new();
         let mut value_children = Vec::new();
 
-        match &self.heap[object_id] {
-            HeapObj::String(_) => {}
-            HeapObj::Native(_) => {}
-            HeapObj::Upvalue(upvalue) => {
+        match self.heap.kind(object_id) {
+            ObjKind::String => {}
+            ObjKind::Native => {}
+            ObjKind::Upvalue => {
+                let upvalue = self.heap.upvalue(object_id);
                 value_children.push(upvalue.closed);
             }
-            HeapObj::Function(function) => {
+            ObjKind::Function => {
+                let function = self.heap.function(object_id);
                 children.push(function.name);
                 for i in 0..function.chunk.values.len() {
                     value_children.push(function.chunk.values[i]);
                 }
             }
-            HeapObj::Closure(closure) => {
+            ObjKind::Closure => {
+                let closure = self.heap.closure(object_id);
                 children.push(closure.function_id);
                 for upvalue in &closure.upvalues {
                     children.push(*upvalue);
                 }
             }
-            HeapObj::Class(class) => {
+            ObjKind::Class => {
+                let class = self.heap.class(object_id);
                 children.push(class.name);
                 for (name, method) in &class.methods {
                     children.push(*name);
                     value_children.push(*method);
                 }
             }
-            HeapObj::Instance(instance) => {
+            ObjKind::Instance => {
+                let instance = self.heap.instance(object_id);
                 children.push(instance.class);
                 for (name, value) in &instance.fields {
                     children.push(*name);
                     value_children.push(*value);
                 }
             }
-            HeapObj::BoundMethod(bound_method) => {
+            ObjKind::BoundMethod => {
+                let bound_method = self.heap.bound_method(object_id);
                 value_children.push(bound_method.receiver);
                 children.push(bound_method.method);
             }

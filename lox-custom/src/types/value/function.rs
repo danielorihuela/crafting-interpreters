@@ -1,8 +1,4 @@
-use crate::{
-    heap::ObjId,
-    types::{chunk::Chunk, value::obj::HeapObj},
-    vm::VM,
-};
+use crate::{heap::ObjId, types::chunk::Chunk, vm::VM};
 
 pub struct ObjFunction {
     pub arity: usize,
@@ -25,9 +21,7 @@ impl ObjFunction {
         if self.name.is_null() {
             "<script>".to_string()
         } else {
-            let HeapObj::String(name) = &vm.heap[self.name] else {
-                panic!("Expected a string object");
-            };
+            let name = vm.heap.string(self.name);
             format!("<fn {}>", name)
         }
     }

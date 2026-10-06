@@ -1,9 +1,4 @@
-use crate::{
-    HashMap,
-    heap::ObjId,
-    types::value::{Value, obj::HeapObj},
-    vm::VM,
-};
+use crate::{HashMap, heap::ObjId, types::value::Value, vm::VM};
 
 pub struct ObjClass {
     pub name: ObjId,
@@ -19,11 +14,7 @@ impl ObjClass {
     }
 
     pub fn to_string(&self, vm: &VM) -> String {
-        let HeapObj::String(name) = &vm.heap[self.name] else {
-            panic!("Expected ObjString for class name");
-        };
-
-        name.clone()
+        vm.heap.string(self.name).clone()
     }
 }
 
@@ -41,10 +32,7 @@ impl ObjInstance {
     }
 
     pub fn to_string(&self, vm: &VM) -> String {
-        let HeapObj::Class(class) = &vm.heap[self.class] else {
-            panic!("Expected ObjClass for instance's class");
-        };
-
+        let class = vm.heap.class(self.class);
         format!("{} instance", class.to_string(vm))
     }
 }
@@ -60,10 +48,7 @@ impl ObjBoundMethod {
     }
 
     pub fn to_string(&self, vm: &VM) -> String {
-        let HeapObj::Closure(closure) = &vm.heap[self.method] else {
-            panic!("Expected closure for method");
-        };
-
+        let closure = vm.heap.closure(self.method);
         closure.to_string(vm)
     }
 }
