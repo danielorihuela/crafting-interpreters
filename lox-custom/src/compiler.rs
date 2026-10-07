@@ -7,7 +7,7 @@ use crate::{
         TokenType,
         opcode::OpCode,
         token::Token,
-        value::{Value, function::ObjFunction, obj::Obj},
+        value::{Value, function::ObjFunction},
     },
     vm::VM,
 };
@@ -213,7 +213,7 @@ impl<'src> Parser<'src> {
         self.block();
 
         let function = self.end_compiler();
-        let constant = self.make_constant(Value::Obj(Obj::Function(function)));
+        let constant = self.make_constant(Value::Obj(function));
         self.emit_bytes(OpCode::Closure, constant);
 
         let upvalue_count = self.vm.heap.function(function).upvalue_count;
@@ -321,7 +321,7 @@ impl<'src> Parser<'src> {
 
     fn identifier_constant(&mut self) -> u8 {
         let id = self.vm.allocate_string(self.previous.lexeme);
-        let value = Value::Obj(Obj::String(id));
+        let value = Value::Obj(id);
         self.make_constant(value)
     }
 
@@ -738,7 +738,7 @@ impl<'src> Parser<'src> {
         let id = self
             .vm
             .allocate_string(&self.previous.lexeme[1..self.previous.lexeme.len() - 1]);
-        let obj = Value::Obj(Obj::String(id));
+        let obj = Value::Obj(id);
         self.emit_constant(obj);
     }
 
@@ -791,7 +791,7 @@ impl<'src> Parser<'src> {
                 get_opcode = OpCode::GetUpvalue;
             } else {
                 let id = self.vm.allocate_string(name.lexeme);
-                arg = self.make_constant(Value::Obj(Obj::String(id))) as isize;
+                arg = self.make_constant(Value::Obj(id)) as isize;
                 set_opcode = OpCode::SetGlobal;
                 get_opcode = OpCode::GetGlobal;
             }

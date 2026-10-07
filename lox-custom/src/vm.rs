@@ -17,7 +17,7 @@ use crate::{
             class::{ObjBoundMethod, ObjClass, ObjInstance},
             closure::ObjClosure,
             native::{NativeFn, ObjNative},
-            obj::{HeapObj, Obj},
+            obj::HeapObj,
             upvalue::ObjUpvalue,
         },
     },
@@ -94,11 +94,11 @@ impl VM {
             return InterpretResult::CompileError;
         }
 
-        self.stack.push(Value::Obj(Obj::Function(function_id)));
+        self.stack.push(Value::Obj(function_id));
         let function = self.heap.function(function_id);
         let closure_id = self.allocate(ObjClosure::new(function_id, function.upvalue_count));
         self.stack.pop().unwrap();
-        self.stack.push(Value::Obj(Obj::Closure(closure_id)));
+        self.stack.push(Value::Obj(closure_id));
 
         self.call(closure_id, 0);
         self.run()
@@ -144,9 +144,9 @@ impl VM {
                         let a_text = self.heap.string(a_id).clone();
                         let b_id = b.as_string();
                         let b_str = self.heap.string(b_id);
-                        Ok(Value::Obj(Obj::String(
+                        Ok(Value::Obj(
                             self.allocate_string(&format!("{a_text}{b_str}")),
-                        )))
+                        ))
                     } else {
                         a + b
                     };
@@ -302,7 +302,7 @@ impl VM {
                     let function = self.heap.function(function_id);
                     let closure_id =
                         self.allocate(ObjClosure::new(function_id, function.upvalue_count));
-                    self.stack.push(Value::Obj(Obj::Closure(closure_id)));
+                    self.stack.push(Value::Obj(closure_id));
 
                     let upvalue_count = self.heap.function(function_id).upvalue_count;
 
@@ -363,7 +363,7 @@ impl VM {
 
                     let name = self.read_constant_string_id(frame_index, position);
                     let class_id = self.allocate(ObjClass::new(name));
-                    self.stack.push(Value::Obj(Obj::Class(class_id)));
+                    self.stack.push(Value::Obj(class_id));
                 }
                 OpCode::GetProperty => {
                     if !self.stack[self.stack.len() - 1].is_instance() {
@@ -560,7 +560,7 @@ impl VM {
         } else if callee.is_class() {
             let class_id = callee.as_class();
             let instance_id = self.allocate(ObjInstance::new(class_id));
-            let instance_value = Value::Obj(Obj::Instance(instance_id));
+            let instance_value = Value::Obj(instance_id);
             let stack_len = self.stack.len();
             self.stack[stack_len - arg_count - 1] = instance_value;
 
@@ -675,8 +675,7 @@ impl VM {
         let name_id = self.allocate_string(name);
         let native_id = self.allocate(ObjNative::new(function));
         // let native_id = ObjNative::new(self, function);
-        self.globals
-            .insert(name_id, Value::Obj(Obj::Native(native_id)));
+        self.globals.insert(name_id, Value::Obj(native_id));
     }
 }
 
@@ -690,7 +689,7 @@ fn bind_method(vm: &mut VM, class_id: ObjId, name: ObjId) -> Result<(), String> 
         let receiver = vm.stack[vm.stack.len() - 1];
         let bound_method = vm.allocate(ObjBoundMethod::new(receiver, m.as_closure()));
         vm.stack.pop();
-        vm.stack.push(Value::Obj(Obj::BoundMethod(bound_method)));
+        vm.stack.push(Value::Obj(bound_method));
         Ok(())
     } else {
         Err(format!("Undefined property '{}'.", vm.string_text(name)))
@@ -853,17 +852,8 @@ impl VM {
     }
 
     fn mark_value(&mut self, value: &Value) {
-        if let Value::Obj(obj) = value {
-            match obj {
-                Obj::String(id)
-                | Obj::Function(id)
-                | Obj::Closure(id)
-                | Obj::Native(id)
-                | Obj::Upvalue(id)
-                | Obj::Class(id)
-                | Obj::Instance(id)
-                | Obj::BoundMethod(id) => self.mark_object(*id),
-            }
+        if let Value::Obj(id) = value {
+            self.mark_object(*id);
         }
     }
 
@@ -985,7 +975,7 @@ impl VM {
 
         self.strings.insert(data.to_string(), id);
 
-        self.stack.push(Value::Obj(Obj::String(id)));
+        self.stack.push(Value::Obj(id));
         self.strings.insert(data.to_string(), id);
         self.stack.pop();
 

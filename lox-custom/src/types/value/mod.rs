@@ -10,16 +10,29 @@ use std::{
     ops::{Add, Div, Mul, Sub},
 };
 
-use crate::{heap::ObjId, types::value::obj::Obj, vm::VM};
+use crate::{
+    heap::{ObjId, ObjKind},
+    vm::VM,
+};
 
-#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Value {
     Nil,
     Bool(bool),
     Number(f64),
 
     // Heap
-    Obj(Obj),
+    Obj(ObjId),
+}
+
+impl PartialOrd for Value {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match (self, other) {
+            (Value::Number(a), Value::Number(b)) => a.partial_cmp(b),
+            (Value::Bool(a), Value::Bool(b)) => a.partial_cmp(b),
+            _ => None,
+        }
+    }
 }
 
 impl Value {
@@ -28,7 +41,16 @@ impl Value {
             Value::Bool(b) => b.to_string(),
             Value::Number(n) => n.to_string(),
             Value::Nil => "nil".to_string(),
-            Value::Obj(o) => o.to_string(vm),
+            Value::Obj(id) => match id.kind() {
+                ObjKind::String => vm.heap.string(*id).clone(),
+                ObjKind::Function => vm.heap.function(*id).to_string(vm),
+                ObjKind::Closure => vm.heap.closure(*id).to_string(vm),
+                ObjKind::Native => vm.heap.native(*id).to_string(),
+                ObjKind::Upvalue => vm.heap.upvalue(*id).to_string(),
+                ObjKind::Class => vm.heap.class(*id).to_string(vm),
+                ObjKind::Instance => vm.heap.instance(*id).to_string(vm),
+                ObjKind::BoundMethod => vm.heap.bound_method(*id).to_string(vm),
+            },
         }
     }
 }
@@ -66,7 +88,7 @@ impl Value {
         matches!(self, Value::Obj(_))
     }
 
-    pub fn as_obj(self) -> Obj {
+    pub fn as_obj(self) -> ObjId {
         if let Value::Obj(o) = self {
             o
         } else {
@@ -130,12 +152,16 @@ macro_rules! value_obj_accessors {
         paste::paste! {
             $(
                 pub fn [<is_ $ty:snake>](&self) -> bool {
-                    matches!(self, Value::Obj(Obj::$ty(_)))
+                    matches!(self, Value::Obj(id) if id.kind() == ObjKind::$ty)
                 }
 
                 pub fn [<as_ $ty:snake>](&self) -> ObjId {
-                    if let Value::Obj(Obj::$ty(s)) = self {
-                        *s
+                    if let Value::Obj(id) = self {
+                        if id.kind() == ObjKind::$ty {
+                            *id
+                        } else {
+                            panic!("Value is not a {}", stringify!($ty));
+                        }
                     } else {
                         panic!("Value is not a {}", stringify!($ty));
                     }
@@ -172,5 +198,14 @@ mod tests {
 
         let v = Value::Number(3.14);
         assert_eq!(v.is_number(), true);
+    }
+
+    #[test]
+    fn object_values_store_objid_directly() {
+        let id = ObjId::null();
+        let value = Value::Obj(id);
+
+        assert!(value.is_obj());
+        assert_eq!(value.as_obj(), id);
     }
 }

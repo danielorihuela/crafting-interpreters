@@ -1,3 +1,5 @@
+use std::fmt::{Display, Formatter, Result};
+
 use crate::{
     DEBUG_LOG_GC,
     types::value::{
@@ -28,13 +30,17 @@ impl ObjId {
         }
     }
 
+    pub fn kind(&self) -> ObjKind {
+        self.kind
+    }
+
     pub fn is_null(&self) -> bool {
         self.index == usize::MAX
     }
 }
 
-impl std::fmt::Display for ObjId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Display for ObjId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         if self.is_null() {
             write!(f, "ObjId(null)")
         } else {
