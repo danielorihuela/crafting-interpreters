@@ -17,8 +17,8 @@ pub struct Parser<'src> {
 
     current_class: Option<Rc<RefCell<ClassCompiler>>>,
 
-    current: Token<'src>,
-    previous: Token<'src>,
+    current: Rc<Token<'src>>,
+    previous: Rc<Token<'src>>,
 
     vm: &'src mut VM,
 
@@ -31,8 +31,8 @@ impl<'src> Parser<'src> {
         Self {
             scanner,
             current_class: None,
-            current: Token::default(),
-            previous: Token::default(),
+            current: Rc::new(Token::default()),
+            previous: Rc::new(Token::default()),
             vm,
             had_error: false,
             panic_mode: false,
@@ -62,7 +62,7 @@ impl<'src> Parser<'src> {
         self.previous = self.current.clone();
 
         loop {
-            self.current = self.scanner.get_token();
+            self.current = Rc::new(self.scanner.get_token());
             if self.current.ttype != TokenType::Error {
                 break;
             }
@@ -106,7 +106,7 @@ impl<'src> Parser<'src> {
             self.consume(TokenType::Identifier, "Expect superclass name.");
             self.variable(false);
 
-            if self.identifiers_equal(&class_name, &self.previous) {
+            if class_name.lexeme == self.previous.lexeme {
                 self.error("A class can't inherit from itself.");
             }
 
@@ -114,7 +114,7 @@ impl<'src> Parser<'src> {
             self.add_local_for(self.synthetic_token("super"));
             self.define_variable(0);
 
-            self.named_variable_with(&class_name, false);
+            self.named_variable(&class_name, false);
             self.emit_byte(OpCode::Inherit);
             self.current_class
                 .as_mut()
@@ -123,7 +123,7 @@ impl<'src> Parser<'src> {
                 .has_superclass = true;
         }
 
-        self.named_variable_with(&class_name, false);
+        self.named_variable(&class_name, false);
         self.consume(TokenType::LeftBrace, "Expect '{' before class body.");
         while self.current.ttype != TokenType::RightBrace && self.current.ttype != TokenType::Eof {
             self.method();
@@ -175,7 +175,6 @@ impl<'src> Parser<'src> {
     fn function(&mut self, ftype: FunctionType) {
         let compiler = Rc::new(RefCell::new(Compiler::new(
             ftype,
-            self.vm.compiler.clone(),
             self.previous.lexeme,
             self.vm,
         )));
@@ -188,8 +187,7 @@ impl<'src> Parser<'src> {
         if self.current.ttype != TokenType::RightParen {
             loop {
                 let arity = {
-                    let curr_compiler = compiler.borrow();
-                    let function = self.vm.heap.function_mut(curr_compiler.function);
+                    let function = self.current_function_mut();
                     function.arity += 1;
 
                     function.arity
@@ -266,10 +264,6 @@ impl<'src> Parser<'src> {
         }
 
         self.add_local();
-    }
-
-    fn identifiers_equal(&self, a: &Token, b: &Token) -> bool {
-        a.lexeme == b.lexeme
     }
 
     fn add_local(&mut self) {
@@ -493,10 +487,7 @@ impl<'src> Parser<'src> {
             self.error("Too much code to jump over.");
         }
 
-        let function = self
-            .vm
-            .heap
-            .function_mut(self.vm.compiler.as_ref().unwrap().borrow().function);
+        let function = self.current_function_mut();
         function.chunk.code[offset] = ((jump >> 8) & 0xff) as u8;
         function.chunk.code[offset + 1] = (jump & 0xff) as u8;
     }
@@ -622,8 +613,7 @@ impl<'src> Parser<'src> {
         #[cfg(debug_assertions)]
         {
             if !self.had_error {
-                let function_id = self.vm.compiler.as_ref().unwrap().borrow().function;
-                let function = self.vm.heap.function(function_id);
+                let function = self.current_function();
 
                 let name = {
                     if function.name.is_null() {
@@ -646,21 +636,9 @@ impl<'src> Parser<'src> {
             .borrow()
             .enclosing
             .clone();
-        if self
-            .vm
-            .compiler
-            .as_ref()
-            .unwrap()
-            .borrow()
-            .enclosing
-            .is_none()
-        {
-            self.vm.compiler = Some(self.vm.compiler.clone().unwrap());
-            return function;
+        if enclosing.is_some() {
+            self.vm.compiler = enclosing;
         }
-
-        self.vm.compiler = enclosing.clone();
-        self.vm.compiler = enclosing;
 
         function
     }
@@ -743,7 +721,7 @@ impl<'src> Parser<'src> {
     }
 
     fn variable(&mut self, can_assign: bool) {
-        self.named_variable(can_assign);
+        self.named_variable(&self.previous.clone(), can_assign);
     }
 
     fn this(&mut self, _can_assign: bool) {
@@ -765,19 +743,19 @@ impl<'src> Parser<'src> {
         self.consume(TokenType::Identifier, "Expect superclass method name.");
         let name = self.identifier_constant();
 
-        self.named_variable_with(&self.synthetic_token("this"), false);
+        self.named_variable(&self.synthetic_token("this"), false);
         if self.match_type(TokenType::LeftParen) {
             let arg_count = self.argument_list();
-            self.named_variable_with(&self.synthetic_token("super"), false);
+            self.named_variable(&self.synthetic_token("super"), false);
             self.emit_bytes(OpCode::SuperInvoke, name);
             self.emit_byte(arg_count);
         } else {
-            self.named_variable_with(&self.synthetic_token("super"), false);
+            self.named_variable(&self.synthetic_token("super"), false);
             self.emit_bytes(OpCode::GetSuper, name);
         }
     }
 
-    fn named_variable_with(&mut self, name: &Token<'src>, can_assign: bool) {
+    fn named_variable(&mut self, name: &Token<'src>, can_assign: bool) {
         let set_opcode;
         let get_opcode;
         let mut arg = resolve_local(self, self.vm.compiler.clone(), name);
@@ -792,34 +770,6 @@ impl<'src> Parser<'src> {
             } else {
                 let id = self.vm.allocate_string(name.lexeme);
                 arg = self.make_constant(Value::Obj(id)) as isize;
-                set_opcode = OpCode::SetGlobal;
-                get_opcode = OpCode::GetGlobal;
-            }
-        }
-
-        if can_assign && self.match_type(TokenType::Equal) {
-            self.expression();
-            self.emit_bytes(set_opcode, arg as u8);
-        } else {
-            self.emit_bytes(get_opcode, arg as u8);
-        }
-    }
-
-    fn named_variable(&mut self, can_assign: bool) {
-        let set_opcode;
-        let get_opcode;
-        let name = self.previous.clone();
-        let mut arg = resolve_local(self, self.vm.compiler.clone(), &name);
-        if arg != -1 {
-            set_opcode = OpCode::SetLocal;
-            get_opcode = OpCode::GetLocal;
-        } else {
-            arg = self.resolve_upvalue(self.vm.compiler.clone(), &name);
-            if arg != -1 {
-                set_opcode = OpCode::SetUpvalue;
-                get_opcode = OpCode::GetUpvalue;
-            } else {
-                arg = self.identifier_constant() as isize;
                 set_opcode = OpCode::SetGlobal;
                 get_opcode = OpCode::GetGlobal;
             }
@@ -1080,6 +1030,22 @@ impl<'src> Parser<'src> {
         self.had_error = true;
     }
 
+    fn current_function(&self) -> &ObjFunction {
+        if let Some(compiler) = &self.vm.compiler {
+            return self.vm.heap.function(compiler.borrow().function);
+        } else {
+            panic!("No current function");
+        }
+    }
+
+    fn current_function_mut(&mut self) -> &mut ObjFunction {
+        if let Some(compiler) = &self.vm.compiler {
+            return self.vm.heap.function_mut(compiler.borrow_mut().function);
+        } else {
+            panic!("No current function");
+        }
+    }
+
     fn current_chunk_code_count(&self) -> usize {
         let function = self
             .vm
@@ -1201,12 +1167,7 @@ pub struct Local {
 }
 
 impl<'src> Compiler {
-    pub fn new(
-        ftype: FunctionType,
-        enclosing: Option<Rc<RefCell<Compiler>>>,
-        data: &str,
-        vm: &'src mut VM,
-    ) -> Self {
+    pub fn new(ftype: FunctionType, data: &str, vm: &'src mut VM) -> Self {
         let mut local = Local {
             name: String::new(),
             depth: 0,
@@ -1231,7 +1192,7 @@ impl<'src> Compiler {
             }; u8::MAX as usize + 1],
             function: vm.allocate(ObjFunction::new()),
             ftype: ftype.clone(),
-            enclosing,
+            enclosing: vm.compiler.clone(),
         };
 
         if ftype != FunctionType::Script {
@@ -1267,7 +1228,7 @@ mod tests {
 
                     let scanner = &mut Scanner::new(input);
                     let mut vm = VM::new();
-                    let compiler = Rc::new(RefCell::new(Compiler::new(FunctionType::Script, None, "", &mut vm)));
+                    let compiler = Rc::new(RefCell::new(Compiler::new(FunctionType::Script, "", &mut vm)));
                     vm.compiler = Some(compiler);
                     let parser = &mut Parser::new(scanner, &mut vm);
 

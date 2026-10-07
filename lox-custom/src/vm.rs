@@ -84,7 +84,7 @@ impl VM {
 
     pub fn interpret(&mut self, source: &str) -> InterpretResult {
         let scanner = &mut Scanner::new(source);
-        let compiler = Compiler::new(FunctionType::Script, None, "", self);
+        let compiler = Compiler::new(FunctionType::Script, "", self);
         self.compiler = Some(Rc::new(RefCell::new(compiler)));
 
         let parser = &mut Parser::new(scanner, self);
