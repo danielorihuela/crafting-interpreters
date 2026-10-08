@@ -154,18 +154,6 @@ macro_rules! value_obj_accessors {
                 pub fn [<is_ $ty:snake>](&self) -> bool {
                     matches!(self, Value::Obj(id) if id.kind() == ObjKind::$ty)
                 }
-
-                pub fn [<as_ $ty:snake>](&self) -> ObjId {
-                    if let Value::Obj(id) = self {
-                        if id.kind() == ObjKind::$ty {
-                            *id
-                        } else {
-                            panic!("Value is not a {}", stringify!($ty));
-                        }
-                    } else {
-                        panic!("Value is not a {}", stringify!($ty));
-                    }
-                }
             )+
         }
     };

@@ -88,7 +88,7 @@ pub mod debug {
                     value.to_string(vm)
                 );
 
-                let function = value.as_function();
+                let function = value.as_obj();
                 let function = vm.heap.function(function);
                 for _ in 0..function.upvalue_count {
                     curr_offset += 1;

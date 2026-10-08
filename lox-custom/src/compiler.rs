@@ -1030,6 +1030,7 @@ impl<'src> Parser<'src> {
         self.had_error = true;
     }
 
+    #[cfg(debug_assertions)]
     fn current_function(&self) -> &ObjFunction {
         if let Some(compiler) = &self.vm.compiler {
             return self.vm.heap.function(compiler.borrow().function);

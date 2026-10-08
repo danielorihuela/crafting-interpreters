@@ -140,10 +140,8 @@ impl VM {
                     let b = self.stack[self.stack.len() - 1];
                     let a = self.stack[self.stack.len() - 2];
                     let result = if a.is_string() && b.is_string() {
-                        let a_id = a.as_string();
-                        let a_text = self.heap.string(a_id).clone();
-                        let b_id = b.as_string();
-                        let b_str = self.heap.string(b_id);
+                        let a_text = self.heap.string(a.as_obj());
+                        let b_str = self.heap.string(b.as_obj());
                         Ok(Value::Obj(
                             self.allocate_string(&format!("{a_text}{b_str}")),
                         ))
@@ -371,7 +369,7 @@ impl VM {
                         return InterpretResult::RuntimeError;
                     }
 
-                    let instance_id = self.stack[self.stack.len() - 1].as_instance();
+                    let instance_id = self.stack[self.stack.len() - 1].as_obj();
                     let name_position = self.read_byte_from_frame(frame_index) as usize;
 
                     let name = self.read_constant_string_id(frame_index, name_position);
@@ -398,7 +396,7 @@ impl VM {
                         return InterpretResult::RuntimeError;
                     }
 
-                    let instance_id = self.stack[self.stack.len() - 2].as_instance();
+                    let instance_id = self.stack[self.stack.len() - 2].as_obj();
                     let name_position = self.read_byte_from_frame(frame_index) as usize;
 
                     let name = self.read_constant_string_id(frame_index, name_position);
@@ -415,7 +413,7 @@ impl VM {
                     let name_position = self.read_byte_from_frame(frame_index) as usize;
 
                     let name = self.read_constant_string_id(frame_index, name_position);
-                    let class_id = self.stack[self.stack.len() - 2].as_class();
+                    let class_id = self.stack[self.stack.len() - 2].as_obj();
                     let method = self.stack[self.stack.len() - 1];
 
                     let class = self.heap.class_mut(class_id);
@@ -439,8 +437,8 @@ impl VM {
                         return InterpretResult::RuntimeError;
                     }
 
-                    let superclass_id = superclass.as_class();
-                    let subclass_id = self.stack[self.stack.len() - 1].as_class();
+                    let superclass_id = superclass.as_obj();
+                    let subclass_id = self.stack[self.stack.len() - 1].as_obj();
 
                     let inherited = self.heap.class(superclass_id).methods.clone();
 
@@ -452,7 +450,7 @@ impl VM {
                     let name_position = self.read_byte_from_frame(frame_index) as usize;
 
                     let name = self.read_constant_string_id(frame_index, name_position);
-                    let superclass = self.stack.pop().unwrap().as_class();
+                    let superclass = self.stack.pop().unwrap().as_obj();
 
                     if bind_method(self, superclass, name).is_err() {
                         return InterpretResult::RuntimeError;
@@ -464,7 +462,7 @@ impl VM {
 
                     let arg_count = self.read_byte_from_frame(frame_index) as usize;
 
-                    let superclass = self.stack.pop().unwrap().as_class();
+                    let superclass = self.stack.pop().unwrap().as_obj();
                     if !self.invoke_from_class(superclass, method, arg_count) {
                         return InterpretResult::RuntimeError;
                     }
@@ -504,12 +502,12 @@ impl VM {
 
     fn read_constant_string_id(&self, frame_index: usize, position: usize) -> ObjId {
         let value = self.read_constant_from_frame(frame_index, position);
-        value.as_string()
+        value.as_obj()
     }
 
     fn read_constant_function_id(&self, frame_index: usize, position: usize) -> ObjId {
         let value = self.read_constant_from_frame(frame_index, position);
-        value.as_function()
+        value.as_obj()
     }
 
     fn string_text(&self, id: ObjId) -> String {
@@ -523,7 +521,7 @@ impl VM {
             return false;
         }
 
-        let instance_id = receiver.as_instance();
+        let instance_id = receiver.as_obj();
         let field = {
             let instance = self.heap.instance(instance_id);
             instance.fields.get(&name).copied()
@@ -547,7 +545,7 @@ impl VM {
         };
 
         if let Some(value) = method {
-            return self.call(value.as_closure(), arg_count);
+            return self.call(value.as_obj(), arg_count);
         }
 
         self.runtime_error(&format!("Undefined property '{}'.", self.string_text(name)));
@@ -558,7 +556,7 @@ impl VM {
         if callee.is_function() {
             unreachable!("Functions are always wrapped in closures")
         } else if callee.is_class() {
-            let class_id = callee.as_class();
+            let class_id = callee.as_obj();
             let instance_id = self.allocate(ObjInstance::new(class_id));
             let instance_value = Value::Obj(instance_id);
             let stack_len = self.stack.len();
@@ -570,7 +568,7 @@ impl VM {
             };
 
             if let Some(initializer) = initializer {
-                return self.call(initializer.as_closure(), arg_count);
+                return self.call(initializer.as_obj(), arg_count);
             }
             if arg_count != 0 {
                 self.runtime_error(&format!("Expected 0 arguments but got {}.", arg_count));
@@ -578,7 +576,7 @@ impl VM {
             }
             true
         } else if callee.is_native() {
-            let native_id = callee.as_native();
+            let native_id = callee.as_obj();
             let function = self.heap.native(native_id).function;
             let stack_base = self.stack.len() - arg_count;
             let args = &self.stack[stack_base..];
@@ -587,9 +585,9 @@ impl VM {
             self.stack.push(result);
             true
         } else if callee.is_closure() {
-            self.call(callee.as_closure(), arg_count)
+            self.call(callee.as_obj(), arg_count)
         } else if callee.is_bound_method() {
-            let bm_id = callee.as_bound_method();
+            let bm_id = callee.as_obj();
             let bound_method = self.heap.bound_method(bm_id);
             let (receiver, method) = (bound_method.receiver, bound_method.method);
             let stack_len = self.stack.len();
@@ -637,8 +635,8 @@ impl VM {
 
     pub fn free(&mut self) {
         self.reset_stack();
-        self.globals.clear();
-        self.strings.clear();
+        self.globals = HashMap::default();
+        self.strings = HashMap::default();
         self.heap = Heap::default();
         self.compiler = None;
         self.init_string = ObjId::null();
@@ -674,7 +672,6 @@ impl VM {
     fn define_native(&mut self, name: &str, function: NativeFn) {
         let name_id = self.allocate_string(name);
         let native_id = self.allocate(ObjNative::new(function));
-        // let native_id = ObjNative::new(self, function);
         self.globals.insert(name_id, Value::Obj(native_id));
     }
 }
@@ -687,7 +684,7 @@ fn bind_method(vm: &mut VM, class_id: ObjId, name: ObjId) -> Result<(), String> 
 
     if let Some(m) = method {
         let receiver = vm.stack[vm.stack.len() - 1];
-        let bound_method = vm.allocate(ObjBoundMethod::new(receiver, m.as_closure()));
+        let bound_method = vm.allocate(ObjBoundMethod::new(receiver, m.as_obj()));
         vm.stack.pop();
         vm.stack.push(Value::Obj(bound_method));
         Ok(())
@@ -708,8 +705,7 @@ fn capture_upvalue(local: usize, vm: &mut VM) -> ObjId {
         }
 
         prev = curr;
-        let next = vm.heap.upvalue(curr).next;
-        curr = next;
+        curr = vm.heap.upvalue(curr).next;
     }
 
     if !curr.is_null() {
