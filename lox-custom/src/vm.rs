@@ -371,19 +371,14 @@ impl VM {
 
                     let instance_id = self.stack[self.stack.len() - 1].as_obj();
                     let name_position = self.read_byte_from_frame(frame_index) as usize;
-
                     let name = self.read_constant_string_id(frame_index, name_position);
 
-                    let field_value = {
-                        let instance = self.heap.instance(instance_id);
-                        instance.fields.get(&name).copied()
-                    };
-
-                    if let Some(v) = field_value {
+                    let instance = self.heap.instance(instance_id);
+                    if let Some(value) = instance.fields.get(&name).copied() {
                         self.stack.pop().unwrap();
-                        self.stack.push(v);
+                        self.stack.push(value);
                     } else {
-                        let class_id = self.heap.instance(instance_id).class;
+                        let class_id = instance.class;
                         if let Err(message) = bind_method(self, class_id, name) {
                             self.runtime_error(&message);
                             return InterpretResult::RuntimeError;
@@ -522,19 +517,14 @@ impl VM {
         }
 
         let instance_id = receiver.as_obj();
-        let field = {
-            let instance = self.heap.instance(instance_id);
-            instance.fields.get(&name).copied()
-        };
-
-        if let Some(value) = field {
+        let instance = self.heap.instance(instance_id);
+        if let Some(value) = instance.fields.get(&name).copied() {
             let stack_len = self.stack.len();
             self.stack[stack_len - arg_count - 1] = value;
             return self.call_value(value, arg_count);
         }
 
-        let class_id = self.heap.instance(instance_id).class;
-
+        let class_id = instance.class;
         self.invoke_from_class(class_id, name, arg_count)
     }
 
@@ -968,8 +958,6 @@ impl VM {
         }
 
         let id = self.allocate(data.to_string());
-
-        self.strings.insert(data.to_string(), id);
 
         self.stack.push(Value::Obj(id));
         self.strings.insert(data.to_string(), id);
